@@ -20,3 +20,6 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# ADK local session/eval state
+.adk/
