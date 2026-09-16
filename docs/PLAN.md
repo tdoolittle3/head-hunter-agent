@@ -218,6 +218,69 @@ each of dev/test/lint (six small files, works everywhere). Slight lean toward
 the `Makefile` plus the raw commands written out in the README, because it is
 less to keep in sync.
 
+## What actually shipped
+
+All of it, in five commits. `ruff check .` clean, 36 tests passing, `adk web`
+verified running and the coordinator verified answering a real message.
+
+Two things turned up during the build that the plan above did not predict.
+
+### Surprise 1 — `adk web` from the repo root lists the same agent twice
+
+`adk web` does not use the `AgentLoader` that the plan cites; it uses
+`NestedAgentLoader`, which walks up to five directory levels deep and lists
+**every** folder containing an `agent.py`. From the repo root that produced two
+dropdown entries — `head_hunter` and `head_hunter.agents.head_hunter` — and
+Phase 1 would have made it five.
+
+Verified behaviour:
+
+| Command | Dropdown shows |
+|---|---|
+| `adk web` (repo root) | `head_hunter`, `head_hunter.agents.head_hunter` |
+| `adk web head_hunter` | `head_hunter` only |
+| `adk web head_hunter/agents` | each agent separately |
+
+So the documented command is now **`adk web head_hunter`**, and
+`adk web head_hunter/agents` becomes the way to test one specialist alone in
+Phase 1. D1 still holds — the shim is what makes the first two rows work.
+
+### Surprise 2 — the chosen model is not available in the project on this machine
+
+Q4 settled on `gemini-3.5-flash`, which is also ADK 2.9.1's own default. Against
+the Google Cloud project configured on this machine
+(`project-cfe4e420-...`, `us-central1`) that model returns **404 not found**.
+Probing that project directly:
+
+| Model | Result |
+|---|---|
+| `gemini-2.5-flash` | available |
+| `gemini-2.5-pro` | available |
+| `gemini-3.5-flash` | 404 |
+| `gemini-3-pro-preview`, `gemini-3-flash`, `gemini-2.0-flash` | 404 |
+
+That project is almost certainly not the one Head Hunter will run in, so the
+committed default was **left at `gemini-3.5-flash` as decided**. What changed is
+that the model id is now readable from `HH_MODEL`, so a project that does not
+serve the default is a one-line `.env` edit rather than a code change — which
+matters, because the collaborator who hits this cannot edit Python. This adds
+one variable to `.env.example` beyond the list in the kickoff prompt.
+
+The end-to-end smoke test (ADK `InMemoryRunner`, real Vertex call) was run with
+`HH_MODEL=gemini-2.5-flash` and the coordinator replied correctly.
+
+### Deviations from the plan above, in full
+
+- `adk web` → `adk web head_hunter` (Surprise 1)
+- `HH_MODEL` added to `.env.example` (Surprise 2)
+- `head_hunter/prompts.py` added — a single `load_prompt()` helper rather than
+  repeating the pathlib dance in every agent module
+- `head_hunter/schemas/ids.py` added to hold D6's id format
+- `StorageError` added, so a corrupt or mis-owned data file fails loudly with
+  the path in the message (AGENTS.md rule 6)
+- `tests/test_agent_loads.py` added — not in the plan, but it is the test that
+  would have caught Surprise 1
+
 ## Explicitly not in Phase 0
 
 Interviewer, Intake, Fit Analyst, any tools, fit scoring, the eval set, DOCX

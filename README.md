@@ -63,7 +63,7 @@ flowchart TD
 
 | Phase | Goal | Status |
 |---|---|---|
-| **0 – Scaffold** | Repo, docs, ADK skeleton, schemas, hello-world agent, both collaborators running `adk web` | 🔨 |
+| **0 – Scaffold** | Repo, docs, ADK skeleton, schemas, hello-world agent, both collaborators running `adk web` | ✅ |
 | **1 – Proof of concept** | Interviewer → Profile → paste a JD → Fit Report. The loop we iterate on. | |
 | **2 – Resume** | Resume Tailor, traceability validator, Markdown + DOCX output, eval cases | |
 | **3 – Connectors & deploy** | Gmail Inbox Scout, one job-board API, Firestore, Cloud Run | |
@@ -75,28 +75,52 @@ flowchart TD
 Fastest path is Google Cloud Shell (nothing to install, already authenticated):
 
 ```bash
-git clone https://github.com/<owner>/head-hunter-agent.git
+git clone https://github.com/tdoolittle3/head-hunter-agent.git
 cd head-hunter-agent
 cp .env.example .env        # fill in GOOGLE_CLOUD_PROJECT
 pip install -r requirements.txt
-adk web
+adk web head_hunter
 ```
 
 Then open Web Preview on port 8000 and talk to the Head Hunter.
 
 Locally, do the same after `gcloud auth application-default login`.
 
+Point `adk web` at `head_hunter` rather than at the repo root: ADK searches for
+agents recursively, so from the root it lists every agent folder separately and
+you have to guess which one is the front door.
+
+If the chat window returns a 404 about the model, your Google Cloud project does
+not serve `gemini-3.5-flash`. Uncomment `HH_MODEL` in `.env` and set it to a
+model your project does have — no code change needed.
+
+### Common commands
+
+`make help` lists these. On Windows, where `make` is usually absent, run the
+right-hand side directly:
+
+| Command | What it runs |
+|---|---|
+| `make dev` | `adk web head_hunter` — the chat UI |
+| `make agents` | `adk web head_hunter/agents` — every agent listed separately, for testing one alone |
+| `make test` | `pytest` |
+| `make lint` | `ruff check .` and `ruff format --check .` |
+| `make format` | `ruff format .` and `ruff check --fix .` |
+| `make check` | lint then test; must pass before opening a PR |
+
 ## Project layout
 
 ```
 head_hunter/
+  agent.py       entry point adk web loads; re-exports the coordinator
   agents/        one folder per agent: agent.py + prompt.md
   schemas/       Pydantic models: Profile, JobPosting, FitReport, Resume, JournalEntry
   storage/       repository interface + JSON (Phase 1) and Firestore (Phase 3) backends
   tools/         functions agents can call (save_profile, load_jobs, ...)
   evals/         ADK eval sets, especially for hallucination checks
 data/            local JSON store (gitignored)
-docs/            deeper design notes
+docs/            deeper design notes, including PLAN.md
+tests/           pytest suite
 AGENTS.md        conventions for AI coding agents and humans alike
 CLAUDE.md        imports AGENTS.md for Claude Code
 ```
