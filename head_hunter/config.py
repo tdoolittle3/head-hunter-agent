@@ -12,7 +12,17 @@ import os
 from pathlib import Path
 
 DEFAULT_MODEL = "gemini-3.5-flash"
-"""The Gemini model every agent uses. One constant so swapping it is one edit."""
+"""The Gemini model every agent uses, unless ``HH_MODEL`` overrides it.
+
+Vertex only serves the models your project and region are entitled to, and that
+varies between projects. If `adk web` reports a 404 for this model, set
+``HH_MODEL`` in `.env` to one your project does have, rather than editing code.
+"""
+
+
+def model() -> str:
+    """Return the Gemini model id the agents should use."""
+    return os.environ.get("HH_MODEL", DEFAULT_MODEL)
 
 
 def user_id() -> str:
