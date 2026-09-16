@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Local JSON data store (Phase 1)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
