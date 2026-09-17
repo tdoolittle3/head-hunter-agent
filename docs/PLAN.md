@@ -281,6 +281,45 @@ The end-to-end smoke test (ADK `InMemoryRunner`, real Vertex call) was run with
 - `tests/test_agent_loads.py` added — not in the plan, but it is the test that
   would have caught Surprise 1
 
+## Added after Phase 0: Cloud Run deploy plumbing
+
+Deployment is Phase 3 work. What landed here is only the plumbing, so the
+container is known to build before Firestore and connectors get piled on top.
+`make deploy-test` works; it is a smoke test, not a home for real data.
+
+Three things turned up reading the ADK 2.9.1 deploy code, all verified against
+the installed package rather than assumed.
+
+**`adk deploy` copies only the agent folder.** The generated Dockerfile does
+`COPY "agents/head_hunter/" "/app/agents/head_hunter/"` and installs the
+`requirements.txt` it finds *inside* that folder. The repo-root one is never
+seen. Hence `head_hunter/requirements.txt`, and
+`tests/test_requirements_in_sync.py` to stop the two drifting — AGENTS.md
+already flags duplicate dependency lists as a hazard.
+
+Our absolute `head_hunter.*` imports do survive this, because the package lands
+at `/app/agents/head_hunter/` and ADK puts `/app/agents` on the path.
+
+**The default data directory is unwritable in the container.** The Dockerfile
+runs `WORKDIR /app` as root, then switches to `USER myuser`, and only chowns
+`/app/agents/head_hunter/`. So `/app` stays root-owned, and the default
+`HH_DATA_DIR=./data` resolves to `/app/data`, where `config.data_dir()`'s
+`mkdir` would raise `PermissionError`. Phase 0 never calls it, so nothing breaks
+today — Phase 1 would have crashed on the first save. The deploy targets set
+`HH_DATA_DIR=/tmp/head-hunter-data`.
+
+That path is wiped on every container restart, which is the real point: **the
+JSON store cannot back a deployed service.** Firestore is not a nice-to-have for
+Phase 3, it is the thing that makes deployment meaningful.
+
+**ADK passes nothing about authentication.** It neither adds nor blocks
+`--allow-unauthenticated`; whatever follows `--` is forwarded verbatim to
+`gcloud run deploy` (traced: `ctx.args` → `extra_gcloud_args` → the gcloud
+argv). Left alone, `gcloud` prompts, and a careless yes would put a chat
+interface holding personal career data on the public internet. Both deploy
+targets pass `--no-allow-unauthenticated` explicitly, and the README routes
+access through `gcloud run services proxy`.
+
 ## Explicitly not in Phase 0
 
 Interviewer, Intake, Fit Analyst, any tools, fit scoring, the eval set, DOCX
