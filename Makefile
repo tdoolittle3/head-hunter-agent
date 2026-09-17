@@ -1,7 +1,28 @@
-.PHONY: help install dev agents test lint format check eval
+.PHONY: help install dev agents test lint format check eval \
+        enable-apis deploy-test deploy-prod proxy-test proxy-prod
+
+# --- Deploy settings. Override on the command line, e.g.
+# ---   make deploy-test TEST_PROJECT=my-test-project
+REGION      ?= us-central1
+TEST_PROJECT ?=
+PROD_PROJECT ?=
+TEST_SERVICE ?= head-hunter-test
+PROD_SERVICE ?= head-hunter
+
+# Only set this if your project does not serve the default model.
+MODEL ?=
+
+# The container runs as a non-root user in a root-owned /app, so the JSON store
+# cannot live at the default ./data. /tmp is writable -- and wiped on every
+# restart, which is exactly why this is a smoke test and not somewhere to keep
+# a real career profile. Firestore (Phase 3) is what fixes that.
+DEPLOY_ENV = --env GOOGLE_GENAI_USE_VERTEXAI=TRUE \
+             --env HH_USER_ID=local \
+             --env HH_DATA_DIR=/tmp/head-hunter-data \
+             $(if $(MODEL),--env HH_MODEL=$(MODEL),)
 
 help:  ## Show this help
-	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  make %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  make %-13s %s\n", $$1, $$2}'
 
 install:  ## Install dependencies
 	pip install -r requirements.txt
@@ -29,3 +50,32 @@ eval:  ## Run the ADK eval set against the fixture profile (needs a GCP project)
 	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/blocker_detection.evalset.json --config_file_path head_hunter/evals/test_config.json
 
 check: lint test  ## Everything that must pass before opening a PR
+
+enable-apis:  ## Turn on the Google Cloud APIs a deploy needs (once per project)
+	@test -n "$(PROJECT)" || { echo "Usage: make enable-apis PROJECT=your-project-id"; exit 1; }
+	gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+	  aiplatform.googleapis.com artifactregistry.googleapis.com --project=$(PROJECT)
+
+deploy-test:  ## Deploy to the test Cloud Run service (private)
+	@test -n "$(TEST_PROJECT)" || { echo "Usage: make deploy-test TEST_PROJECT=your-test-project-id"; exit 1; }
+	adk deploy cloud_run \
+	  --project=$(TEST_PROJECT) --region=$(REGION) \
+	  --service_name=$(TEST_SERVICE) --with_ui \
+	  $(DEPLOY_ENV) \
+	  head_hunter -- --no-allow-unauthenticated
+
+deploy-prod:  ## Deploy to the production Cloud Run service (private). See README first.
+	@test -n "$(PROD_PROJECT)" || { echo "Usage: make deploy-prod PROD_PROJECT=your-prod-project-id"; exit 1; }
+	adk deploy cloud_run \
+	  --project=$(PROD_PROJECT) --region=$(REGION) \
+	  --service_name=$(PROD_SERVICE) --with_ui \
+	  $(DEPLOY_ENV) \
+	  head_hunter -- --no-allow-unauthenticated --min-instances=1
+
+proxy-test:  ## Open an authenticated tunnel to the test service on localhost:8080
+	@test -n "$(TEST_PROJECT)" || { echo "Usage: make proxy-test TEST_PROJECT=your-test-project-id"; exit 1; }
+	gcloud run services proxy $(TEST_SERVICE) --project=$(TEST_PROJECT) --region=$(REGION)
+
+proxy-prod:  ## Open an authenticated tunnel to the production service on localhost:8080
+	@test -n "$(PROD_PROJECT)" || { echo "Usage: make proxy-prod PROD_PROJECT=your-prod-project-id"; exit 1; }
+	gcloud run services proxy $(PROD_SERVICE) --project=$(PROD_PROJECT) --region=$(REGION)

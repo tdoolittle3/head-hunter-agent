@@ -1,0 +1,23 @@
+# Container runtime dependencies.
+#
+# `adk deploy` copies ONLY this folder into the image and installs the
+# requirements.txt it finds *inside* it -- the one at the repo root is not
+# copied and is never seen. That is why this file exists separately.
+#
+# google-adk is deliberately absent: the generated Dockerfile already runs
+# `pip install "google-adk[a2a]==<version>"`, where the version comes from
+# `adk deploy --adk_version` and defaults to whatever is installed locally.
+# Pinning it again here risks fighting that install.
+#
+# Dev-only tools (pytest, ruff) are absent on purpose -- they have no business
+# in a production image.
+#
+# Versions must match the repo-root requirements.txt.
+# tests/test_requirements_in_sync.py fails the build if they drift.
+
+pydantic==2.13.5
+python-docx==1.2.0
+
+# Arrives transitively via google-adk, but pinned here so the deployed image
+# uses the version we tested rather than whatever the resolver picks.
+python-dotenv==1.2.3
