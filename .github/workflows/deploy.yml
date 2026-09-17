@@ -1,0 +1,95 @@
+name: Deploy
+
+# Pushes to main deploy to the *test* service. Production is deliberately
+# manual: run this workflow by hand and pick "prod". See docs/DEPLOY.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which Cloud Run service to deploy
+        type: choice
+        options: [test, prod]
+        default: test
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+concurrency:
+  group: deploy-${{ inputs.target || 'test' }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: make check
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: check
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target == 'prod' && 'production' || 'test' }}
+    env:
+      # gcloud offers to create the Artifact Registry repo on a first deploy;
+      # there is no tty here to answer it.
+      CLOUDSDK_CORE_DISABLE_PROMPTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy
+        env:
+          TARGET: ${{ inputs.target || 'test' }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          MODEL: ${{ vars.HH_MODEL }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = "prod" ]; then
+            make deploy-prod PROD_PROJECT="$PROJECT" REGION="$REGION" MODEL="$MODEL"
+          else
+            make deploy-test TEST_PROJECT="$PROJECT" REGION="$REGION" MODEL="$MODEL"
+          fi
+
+      - name: Report the service URL
+        env:
+          TARGET: ${{ inputs.target || 'test' }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = "prod" ]; then SERVICE=head-hunter; else SERVICE=head-hunter-test; fi
+          URL=$(gcloud run services describe "$SERVICE" \
+            --project="$PROJECT" --region="$REGION" --format='value(status.url)')
+          {
+            echo "### Deployed \`$SERVICE\`"
+            echo
+            echo "URL: $URL"
+            echo
+            echo "The service is private. Reach it with:"
+            echo
+            echo '```bash'
+            echo "gcloud run services proxy $SERVICE --project=$PROJECT --region=$REGION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
