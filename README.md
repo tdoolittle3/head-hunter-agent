@@ -64,7 +64,7 @@ flowchart TD
 | Phase | Goal | Status |
 |---|---|---|
 | **0 – Scaffold** | Repo, docs, ADK skeleton, schemas, hello-world agent, both collaborators running `adk web` | ✅ |
-| **1 – Proof of concept** | Interviewer → Profile → paste a JD → Fit Report. The loop we iterate on. | |
+| **1 – Proof of concept** | Interviewer → Profile → paste a JD → Fit Report. The loop we iterate on. | ✅ |
 | **2 – Resume** | Resume Tailor, traceability validator, Markdown + DOCX output, eval cases | |
 | **3 – Connectors & deploy** | Gmail Inbox Scout, one job-board API, Firestore, Cloud Run | |
 | **4 – Coach** | Application tracker, interview debriefs, pattern reflection | |
@@ -83,6 +83,18 @@ adk web head_hunter
 ```
 
 Then open Web Preview on port 8000 and talk to the Head Hunter.
+
+### Trying the Phase 1 loop
+
+1. Say hello. Ask it to interview you.
+2. Spend ten minutes on your career. It will walk backwards through your roles
+   and push for numbers. Answer as you would a recruiter.
+3. Paste a job description straight into the chat.
+4. Ask for a fit analysis.
+
+Everything lands as readable JSON under `data/` -- open the files and check
+them. `data/profile.json` should contain your actual words under `evidence`;
+if it contains anything you did not say, that is a bug worth reporting.
 
 Locally, do the same after `gcloud auth application-default login`.
 
@@ -107,18 +119,25 @@ right-hand side directly:
 | `make lint` | `ruff check .` and `ruff format --check .` |
 | `make format` | `ruff format .` and `ruff check --fix .` |
 | `make check` | lint then test; must pass before opening a PR |
+| `make eval` | run the ADK eval set (needs `pip install "google-adk[eval]"`) |
 
 ## Project layout
 
 ```
 head_hunter/
-  agent.py       entry point adk web loads; re-exports the coordinator
+  agent.py       entry point adk web loads; wraps the coordinator in an App
   agents/        one folder per agent: agent.py + prompt.md
+                 head_hunter (coordinator), interviewer, intake, fit_analyst
   schemas/       Pydantic models: Profile, JobPosting, FitReport, Resume, JournalEntry
   storage/       repository interface + JSON (Phase 1) and Firestore (Phase 3) backends
-  tools/         functions agents can call (save_profile, load_jobs, ...)
-  evals/         ADK eval sets, especially for hallucination checks
+  tools/         functions agents can call, grouped per agent
+  scoring.py     deterministic fit score -- never the model's opinion
+  jd_text.py     deterministic job-description clean-up
+  evals/         ADK eval sets + fixture profile, for hallucination checks
 data/            local JSON store (gitignored)
+  profile.json     your career profile
+  jobs/            one file per posting
+  fit_reports/     one file per analysis
 docs/            deeper design notes, including PLAN.md
 tests/           pytest suite
 AGENTS.md        conventions for AI coding agents and humans alike

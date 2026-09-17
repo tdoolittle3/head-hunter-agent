@@ -1,7 +1,11 @@
-# Phase 0 plan
+# Plan
 
-Scope of this document: **Phase 0 only** (scaffold). Phase 1 is out of scope
-until Phase 0 is reviewed and confirmed.
+Phase 0 (scaffold) and Phase 1 (the proof-of-concept loop), both shipped.
+
+The Phase 1 write-up is at the bottom. The Phase 0 record is kept above it
+because the decisions it pinned still govern the code.
+
+## Phase 0
 
 ## What is already true
 
@@ -295,3 +299,124 @@ nothing reads or writes them yet.
   you and explains what it will be able to do
 - A non-programmer can follow the README from a fresh Cloud Shell to a working
   chat window
+
+---
+
+# Phase 1: the proof-of-concept loop
+
+Interview → Profile → paste a JD → Fit Report. Shipped and verified end to end
+against a live Vertex model: a six-turn conversation built a profile, parsed a
+posting, and produced a report scoring 35 with the missing security clearance
+correctly marked a blocker. All three files landed in `data/`.
+
+## What shipped
+
+| Piece | Where | Note |
+|---|---|---|
+| Deterministic fit scoring | `head_hunter/scoring.py` | The model cannot pass a score |
+| Deterministic JD clean-up | `head_hunter/jd_text.py` | Strips site furniture before the model reads it |
+| Interviewer | `head_hunter/agents/interviewer/` | The only agent that writes career facts |
+| Intake | `head_hunter/agents/intake/` | Pasted JD → structured `JobPosting` |
+| Fit Analyst | `head_hunter/agents/fit_analyst/` | Cited report, stretch vs blocker |
+| Coordinator | `head_hunter/agents/head_hunter/` | Routes; warns on a thin profile |
+| Tools | `head_hunter/tools/` | Grouped per agent |
+| Eval set | `head_hunter/evals/` | Blocker detection, with fixture profile |
+
+88 tests, `ruff` clean.
+
+## The rules are enforced in code, not in prompts
+
+A prompt can be ignored by a model having an off day. These cannot:
+
+- **Rule 1 (evidence-backed).** `add_accomplishment` and `add_skill` both
+  require `source_text` of at least four words and build an `Evidence` record
+  from it. There is no path to recording a career fact without the user's own
+  words. The one tool that accepts a guess is `add_open_question`, which stores
+  it in a `hypothesis` field that no resume can cite.
+- **Rule 3 (fit reports cite).** `MetRequirement` refuses to construct with an
+  empty `evidence_ids`, and `save_fit_report` rejects a met requirement with no
+  citations, telling the model to move it to unmet instead. It also refuses to
+  save unless *every* requirement has been judged, so nothing can be quietly
+  skipped.
+- **Rule 4 (deterministic where possible).** `save_fit_report` has no `score`
+  parameter. A test asserts that, so nobody can add one without noticing.
+- **Rule 2 (one author).** A test asserts that only the Interviewer holds the
+  profile-writing tools; Intake, the Fit Analyst, and the coordinator do not.
+
+## Three things found by testing, not by reading docs
+
+**A raising tool killed the whole run.** AGENTS.md rule 6 says tools raise and
+agents tell the user what failed. Those are two obligations and ADK only gives
+the first for free: without an `on_tool_error_callback`, a raised exception
+escapes the invocation and the user sees a stack trace, not an explanation. Ran
+both cases to confirm. With the callback attached the model says "I was not able
+to ... the error message was ...", which is what the rule actually asks for.
+Every agent now has it.
+
+**`adk eval` could not load the package at all.** It imports
+`head_hunter/__init__.py` and looks for an `agent` attribute on it — a different
+path from `adk web`, which imports `head_hunter.agent` directly. Our `__init__`
+did not re-export it, so `adk eval` failed with "Agent module should have either
+`root_agent` or `get_agent_async`". ADK's own `adk create` template has
+`from . import agent`; Phase 0 noted the template and did not copy that line.
+
+It has to be the *relative* form: `adk eval` loads the file under a synthetic
+module name, so `head_hunter` is not importable by name at that moment. And
+`adk eval` does not put the repo root on `sys.path` the way `adk web` does,
+which is why `make eval` sets `PYTHONPATH=.`.
+
+**Every agent transfer was re-sending the whole prompt uncached.** ADK warns
+about this at startup and this system transfers constantly. Fixed by exposing an
+`App` with `context_cache_config` from `head_hunter/agent.py` — the loader
+prefers `app` over `root_agent`, and both are exported so nothing else breaks.
+`min_tokens` is set to 2048 because Gemini rejects caches below its own floor;
+the eval run confirmed it, skipping a 1992-token prefix and then caching
+successfully.
+
+## Decisions taken in Phase 1
+
+**P1 — Tools, not `output_schema`, for this phase.** Every Phase 1 step has to
+persist something, and a tool does the judgment-to-storage handoff in one call
+while still leaving a readable reply in the chat. `output_schema` earns its
+place in Phase 2, where the Resume Tailor produces a typed artefact for a
+validator rather than prose for a human.
+
+**P2 — `add_role` added to the tool list.** The kickoff prompt names five
+Interviewer tools; accomplishments need a `role_id`, so there has to be a sixth.
+
+**P3 — A four-word floor on `source_text`.** A one-word quote is not evidence
+and could not support a resume bullet later. The tool refuses and tells the
+Interviewer to go back and ask.
+
+**P4 — A required blocker caps the score at 35; a preferred blocker does not.**
+Being unable to hold a job is categorically different from missing a
+nice-to-have. The constants are named and tested in `head_hunter/scoring.py`.
+
+**P5 — Ambiguous requirements are tagged `required`.** Over-stating the bar
+produces a cautious report; under-stating it produces a confident wrong one.
+
+## Deferred to Phase 2 and beyond
+
+- **Resume Tailor and `validate_resume()`.** The schemas exist and are unused.
+  This is where `output_schema` and a generator-critic loop belong.
+- **DOCX rendering.** `python-docx` is a dependency and nothing imports it yet.
+- **File upload for job descriptions.** Paste only for now.
+- **Richer evals.** One case ships. The README in `head_hunter/evals/` lists the
+  next three worth writing, including a posting the profile genuinely fits, so
+  the analyst is not merely pessimistic.
+- **`google-adk[eval]` is not in `requirements.txt`.** Running `adk eval` needs
+  it, and it pulls in pandas, scikit-learn, nltk, rouge_score and tabulate.
+  That is a large addition for a dev-only tool, and the kickoff prompt says not
+  to add dependencies without asking — so it is documented, not added.
+- **Cloud Run deploy.** On its own branch, unmerged, and blocked on Firestore
+  regardless: the JSON store cannot survive a container restart.
+
+## Known rough edges
+
+- The coordinator sometimes repeats a sub-agent's closing line after a handoff,
+  so the user reads the same sentence twice. Cosmetic.
+- `response_match_score` is a ROUGE similarity, not an assertion. It catches an
+  answer that misses the blocker entirely but is not proof. The hard guarantees
+  are in the Python tests.
+- The profile grows without bound in one JSON file. Fine for one person and a
+  few dozen accomplishments; it is a Firestore problem, not a Phase 1 one.
