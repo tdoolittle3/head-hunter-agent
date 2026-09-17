@@ -1,0 +1,36 @@
+{
+  "eval_set_id": "blocker_detection",
+  "name": "Blocker detection",
+  "description": "The profile has strong pipeline and Python evidence but says nothing about a security clearance. The posting requires an active Secret clearance. The Fit Analyst must call this a blocker, not a stretch, and must not claim the clearance is met. Run with HH_DATA_DIR pointed at head_hunter/evals/fixture_data.",
+  "eval_cases": [
+    {
+      "eval_id": "missing_clearance_is_a_blocker",
+      "conversation": [
+        {
+          "invocation_id": "blocker-001",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Run a fit analysis on job-eval-0001 and tell me whether I should apply."
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "The fit score is 35 out of 100, and the deciding factor is a blocker: the posting requires an active Secret security clearance and there is nothing in your profile showing you hold one. That is a credential you cannot obtain inside an application window, so it stops this application regardless of the rest. What you do have is strong: five-plus years building production data pipelines and strong Python, both evidenced by the Acme Foods billing pipeline rewrite that cut month-end close from nine days to two, plus the preferred BigQuery experience. The recommendation is not to apply unless you already hold the clearance or can confirm the employer will sponsor one."
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "head_hunter",
+        "user_id": "local",
+        "state": {}
+      }
+    }
+  ]
+}

@@ -30,9 +30,39 @@ def test_instruction_comes_from_the_markdown_prompt() -> None:
     assert "No invented experience" in root_agent.instruction
 
 
-def test_phase_0_has_no_tools_or_sub_agents() -> None:
-    assert root_agent.tools == []
-    assert root_agent.sub_agents == []
+def test_coordinator_routes_to_the_three_specialists() -> None:
+    assert [a.name for a in root_agent.sub_agents] == [
+        "interviewer",
+        "intake",
+        "fit_analyst",
+    ]
+
+
+def test_only_the_interviewer_can_write_career_facts() -> None:
+    """Rule 2: the profile has one author. Nothing else may invent facts."""
+    writers = {"add_accomplishment", "add_skill", "add_role", "save_profile"}
+
+    by_agent = {a.name: {t.__name__ for t in a.tools} for a in root_agent.sub_agents}
+    by_agent[root_agent.name] = {t.__name__ for t in root_agent.tools}
+
+    assert writers <= by_agent["interviewer"]
+    for name in ("intake", "fit_analyst", "head_hunter"):
+        assert not (writers & by_agent[name]), f"{name} can write career facts"
+
+
+def test_every_agent_explains_tool_failures_instead_of_crashing() -> None:
+    """Verified against ADK 2.9.1: without this the run dies with a traceback."""
+    for agent in [root_agent, *root_agent.sub_agents]:
+        assert agent.on_tool_error_callback is not None, agent.name
+
+
+def test_the_fit_analyst_cannot_be_handed_a_score() -> None:
+    """Rule 4: scoring is Python. The tool must not expose a score parameter."""
+    import inspect
+
+    from head_hunter.tools import save_fit_report
+
+    assert "score" not in inspect.signature(save_fit_report).parameters
 
 
 def test_missing_prompt_file_raises() -> None:

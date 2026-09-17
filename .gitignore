@@ -23,3 +23,6 @@ venv/
 
 # ADK local session/eval state
 .adk/
+
+# Output of running the eval set, not a fixture
+head_hunter/evals/fixture_data/fit_reports/
