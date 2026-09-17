@@ -1,5 +1,8 @@
 {
   "criteria": {
-    "response_match_score": 0.3
+    "response_match_score": {
+      "threshold": 0.3,
+      "include_intermediate_responses_in_final": true
+    }
   }
 }

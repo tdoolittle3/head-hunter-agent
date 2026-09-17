@@ -9,7 +9,10 @@ a model, so they fail fast in CI rather than months later.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from head_hunter.schemas import JobPosting, MetRequirement, Profile, UnmetRequirement
 from head_hunter.scoring import BLOCKER_SCORE_CAP, score_fit
@@ -51,8 +54,11 @@ def test_the_profile_is_otherwise_strong() -> None:
     """
     profile = load_profile()
 
-    assert not profile.is_thin() or profile.accomplishments, (
-        "the profile needs real evidence, or a low score proves nothing"
+    # Not merely non-empty: a thin profile makes the coordinator stop and ask
+    # "shall I run it anyway?" instead of running, which makes the eval flaky.
+    assert not profile.is_thin(), (
+        "the fixture profile must be rich enough that the coordinator runs the "
+        "analysis without stopping to suggest another interview first"
     )
     assert {s.name for s in profile.skills} >= {"Python", "Airflow", "BigQuery"}
     assert all(a.evidence_id for a in profile.accomplishments)
@@ -119,3 +125,28 @@ def test_the_eval_set_parses_and_targets_the_fixture_job() -> None:
     assert "job-eval-0001" in prompt
     assert "blocker" in reference
     assert "clearance" in reference
+
+
+def test_no_fit_report_is_committed_with_the_fixtures() -> None:
+    """A committed report would let the eval pass without doing the analysis.
+
+    The Fit Analyst has a `get_fit_report` tool, so a checked-in report for the
+    fixture job could be read back instead of the profile being compared to the
+    posting -- which is exactly how an earlier version of this eval passed
+    while doing no work. Running the eval writes one locally, which is fine and
+    gitignored; `make eval` clears it first. Committing one is not.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files", "head_hunter/evals/fixture_data/fit_reports"],
+        capture_output=True,
+        text=True,
+        cwd=EVALS.parent.parent,
+        check=False,
+    )
+    if tracked.returncode != 0:
+        pytest.skip("not a git checkout")
+
+    assert not tracked.stdout.strip(), (
+        "a fit report is committed under fixture_data/; remove it with "
+        "`git rm --cached` -- it is eval output, not a fixture"
+    )

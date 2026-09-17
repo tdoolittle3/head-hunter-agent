@@ -25,15 +25,25 @@ pip install "google-adk[eval]"
 make eval
 ```
 
-Two things `make eval` sets for you, both of which are required:
+Three things `make eval` handles for you, all of which are required:
 
 - **`PYTHONPATH=.`** — unlike `adk web`, `adk eval` does not put the repo root
   on the import path, so `head_hunter.*` imports fail without it.
 - **`HH_DATA_DIR=head_hunter/evals/fixture_data`** — the profile lives on disk,
   not in ADK session state, so the eval has to be pointed at the fixture store
   rather than your real `data/` directory.
+- **Deleting `fixture_data/fit_reports/` first.** A run writes a report there.
+  Leave it behind and the next run can read it back through `get_fit_report`
+  instead of doing the analysis — which is exactly how an earlier version of
+  this eval passed while doing no work at all.
 
-Verified passing against ADK 2.9.1 with `gemini-2.5-flash`.
+`test_config.json` sets `include_intermediate_responses_in_final: true`. That
+flag is not optional here: the Fit Analyst answers *after* a transfer from the
+coordinator, so without it ADK records the root agent's `final_response` as
+`null` and the case scores 0.0 no matter how good the answer was.
+
+Verified passing against ADK 2.9.1 with `gemini-2.5-flash`: score 35, three
+requirements met with citations, the clearance marked `blocker`.
 
 ## A caveat on the metric
 

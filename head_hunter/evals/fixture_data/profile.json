@@ -51,6 +51,35 @@
       ],
       "evidence_id": "ev-eval-0001",
       "source_text": "I rewrote the billing pipeline at Acme as incremental Airflow jobs and cut month-end close from nine days to two. I did the design and most of the build."
+    },
+    {
+      "id": "acc-eval-0002",
+      "role_id": "role-eval-0001",
+      "situation": "Nightly pipeline failures were paging on-call roughly five times a week.",
+      "action": "Added retry, backfill and alerting logic across ~20 nightly jobs.",
+      "result": "On-call pages fell from about five a week to under one.",
+      "metrics": [
+        "5 pages/week to <1"
+      ],
+      "tools": [
+        "Airflow",
+        "Python"
+      ],
+      "evidence_id": "ev-eval-0003",
+      "source_text": "We were paging someone every week for pipeline failures. I added retry and alerting logic across the twenty or so nightly jobs and on-call pages dropped from about five a week to under one."
+    },
+    {
+      "id": "acc-eval-0003",
+      "role_id": "role-eval-0001",
+      "situation": "New data-team hires took about a month to become productive.",
+      "action": "Mentored two junior engineers and wrote the team onboarding guide.",
+      "result": "New hires reached productivity in about a week.",
+      "metrics": [
+        "~1 month to ~1 week"
+      ],
+      "tools": [],
+      "evidence_id": "ev-eval-0004",
+      "source_text": "I mentored two junior engineers through their first year on the data team, and I wrote the onboarding guide the team still uses to get new hires productive in about a week instead of a month."
     }
   ],
   "skills": [
@@ -94,6 +123,20 @@
     {
       "id": "ev-eval-0002",
       "source_text": "I've been writing Python daily for about eight years, mostly data work, and I'd call myself strong with Airflow after four years of running it in production.",
+      "source": "interview",
+      "captured_at": "2026-09-17T00:00:00Z",
+      "note": null
+    },
+    {
+      "id": "ev-eval-0003",
+      "source_text": "We were paging someone every week for pipeline failures. I added retry and alerting logic across the twenty or so nightly jobs and on-call pages dropped from about five a week to under one.",
+      "source": "interview",
+      "captured_at": "2026-09-17T00:00:00Z",
+      "note": null
+    },
+    {
+      "id": "ev-eval-0004",
+      "source_text": "I mentored two junior engineers through their first year on the data team, and I wrote the onboarding guide the team still uses to get new hires productive in about a week instead of a month.",
       "source": "interview",
       "captured_at": "2026-09-17T00:00:00Z",
       "note": null

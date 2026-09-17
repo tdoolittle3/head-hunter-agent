@@ -373,6 +373,31 @@ prefers `app` over `root_agent`, and both are exported so nothing else breaks.
 the eval run confirmed it, skipping a 1992-token prefix and then caching
 successfully.
 
+## The eval was passing for the wrong reason
+
+Worth recording, because it nearly shipped. The first `adk eval` run reported
+"Tests passed: 1" — and it was reading a fit report left on disk by an earlier
+manual run, which had been committed as if it were a fixture. The Fit Analyst
+has a `get_fit_report` tool, so the model could answer from the cached report
+without ever comparing the profile to the posting.
+
+It surfaced only because that file looked out of place in the commit diff.
+Deleting it turned the eval red, which is what a real failure looks like.
+
+Two more things then had to be fixed before it passed honestly:
+
+- **`include_intermediate_responses_in_final: true`** in `test_config.json`.
+  The Fit Analyst answers *after* a transfer from the coordinator, so without
+  the flag ADK records the root agent's `final_response` as `null` and the case
+  scores 0.0 however good the answer was.
+- **The fixture profile was thin** (one accomplishment), so the coordinator
+  could stop and ask "shall I run it anyway?" instead of running — an
+  intermittent failure waiting to happen. It now carries three accomplishments,
+  and a test asserts `not profile.is_thin()`.
+
+`make eval` now deletes `fixture_data/fit_reports/` before running, the
+directory is gitignored, and a test fails if one is ever committed again.
+
 ## Decisions taken in Phase 1
 
 **P1 — Tools, not `output_schema`, for this phase.** Every Phase 1 step has to
@@ -401,6 +426,9 @@ produces a cautious report; under-stating it produces a confident wrong one.
   This is where `output_schema` and a generator-critic loop belong.
 - **DOCX rendering.** `python-docx` is a dependency and nothing imports it yet.
 - **File upload for job descriptions.** Paste only for now.
+- **A stronger eval metric.** `response_match_score` is ROUGE similarity,
+  not an assertion. A custom metric asserting `unmet[].gap == "blocker"`
+  on the stored report would be far better than comparing prose.
 - **Richer evals.** One case ships. The README in `head_hunter/evals/` lists the
   next three worth writing, including a posting the profile genuinely fits, so
   the analyst is not merely pessimistic.
