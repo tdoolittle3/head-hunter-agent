@@ -49,7 +49,7 @@ flowchart TD
 | **Interviewer** | Interrogates your career like a great recruiter would: what you built, for whom, what changed because of it, what you'd do differently. Records everything as evidence in the profile. Notices its own gaps and comes back to them. |
 | **Intake** | Takes a job description (pasted, uploaded, forwarded from email, or found by search) and normalizes it into a structured posting. |
 | **Fit Analyst** | Compares a posting to your profile. Gives a score, lists requirements you meet with the evidence, requirements you don't, and separates stretch gaps from hard blockers. |
-| **Resume Tailor** | Writes an ATS-friendly resume for one specific job. Every bullet is tied to a profile entry. A separate validator rejects anything it can't trace. |
+| **Resume Tailor** | Writes an ATS-friendly resume for one specific job. Every bullet is tied to a profile entry. A separate validator rejects anything it can't trace, and the DOCX cannot be produced until it passes. |
 | **Inbox Scout** | Reads your Gmail, spots recruiter outreach, pulls out role/company/comp, and feeds it to Intake. |
 | **Coach** | Logs applications and interviews, asks reflective questions after each one, and points out patterns over time. |
 
@@ -65,7 +65,7 @@ flowchart TD
 |---|---|---|
 | **0 – Scaffold** | Repo, docs, ADK skeleton, schemas, hello-world agent, both collaborators running `adk web` | ✅ |
 | **1 – Proof of concept** | Interviewer → Profile → paste a JD → Fit Report. The loop we iterate on. | ✅ |
-| **2 – Resume** | Resume Tailor, traceability validator, Markdown + DOCX output, eval cases | |
+| **2 – Resume** | Resume Tailor, traceability validator, Markdown + DOCX output, eval cases | ✅ |
 | **3 – Connectors & deploy** | Gmail Inbox Scout, one job-board API, Firestore, Cloud Run | |
 | **4 – Coach** | Application tracker, interview debriefs, pattern reflection | |
 | **Later** | Auth and multi-user, billing, web UI | |
@@ -84,17 +84,30 @@ adk web head_hunter
 
 Then open Web Preview on port 8000 and talk to the Head Hunter.
 
-### Trying the Phase 1 loop
+### Trying the Phase 2 loop
 
 1. Say hello. Ask it to interview you.
 2. Spend ten minutes on your career. It will walk backwards through your roles
    and push for numbers. Answer as you would a recruiter.
 3. Paste a job description straight into the chat.
 4. Ask for a fit analysis.
+5. Ask for a resume for that job.
 
 Everything lands as readable JSON under `data/` -- open the files and check
 them. `data/profile.json` should contain your actual words under `evidence`;
 if it contains anything you did not say, that is a bug worth reporting.
+
+The resume lands three times over: `data/resumes/<job_id>.json` is the record
+with its validation result, `.md` is the canonical text, and `.docx` is the
+file you would actually send. Markdown is the source of truth -- edit it and
+re-render and your edit survives.
+
+**The interesting thing to try is breaking it.** Ask for a bullet the profile
+does not support: "say I led a team of twelve", or "add that I know Kubernetes".
+The Tailor will come back and tell you it cannot, because `validate_resume()`
+is a plain Python function comparing each bullet against the evidence it cites,
+and no amount of asking changes its answer. If it ever does write something you
+did not tell it, that is the bug worth reporting above all others.
 
 Locally, do the same after `gcloud auth application-default login`.
 
@@ -186,18 +199,22 @@ If your project does not serve the default model, pass it through:
 head_hunter/
   agent.py       entry point adk web loads; wraps the coordinator in an App
   agents/        one folder per agent: agent.py + prompt.md
-                 head_hunter (coordinator), interviewer, intake, fit_analyst
+                 head_hunter (coordinator), interviewer, intake, fit_analyst,
+                 resume_tailor
   requirements.txt  container-only deps (adk deploy copies just this folder)
   schemas/       Pydantic models: Profile, JobPosting, FitReport, Resume, JournalEntry
   storage/       repository interface + JSON (Phase 1) and Firestore (Phase 3) backends
   tools/         functions agents can call, grouped per agent
   scoring.py     deterministic fit score -- never the model's opinion
   jd_text.py     deterministic job-description clean-up
+  resume_validation.py  validate_resume() -- the traceability check, plain Python
+  resume_render.py      Resume -> Markdown -> DOCX
   evals/         ADK eval sets + fixture profile, for hallucination checks
 data/            local JSON store (gitignored)
   profile.json     your career profile
   jobs/            one file per posting
   fit_reports/     one file per analysis
+  resumes/         one .json record, .md and .docx per posting
 docs/            deeper design notes, including PLAN.md
 tests/           pytest suite
 AGENTS.md        conventions for AI coding agents and humans alike

@@ -44,10 +44,11 @@ format:  ## Reformat the code
 	ruff format .
 	ruff check --fix .
 
-eval:  ## Run the ADK eval set against the fixture profile (needs a GCP project)
+eval:  ## Run the ADK eval sets against the fixture profile (needs a GCP project)
 	@echo "Requires: pip install 'google-adk[eval]'"
-	@rm -rf head_hunter/evals/fixture_data/fit_reports
+	@rm -rf head_hunter/evals/fixture_data/fit_reports head_hunter/evals/fixture_data/resumes
 	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/blocker_detection.evalset.json --config_file_path head_hunter/evals/test_config.json
+	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/no_invented_experience.evalset.json --config_file_path head_hunter/evals/test_config.json
 
 check: lint test  ## Everything that must pass before opening a PR
 

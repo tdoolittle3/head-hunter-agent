@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from head_hunter.schemas import FitReport, JobPosting, Profile
+from head_hunter.schemas import FitReport, JobPosting, Profile, Resume
 
 
 class Repository(ABC):
@@ -45,3 +45,32 @@ class Repository(ABC):
     @abstractmethod
     def get_fit_report(self, user_id: str, job_id: str) -> FitReport | None:
         """Load the fit report for one job, or None if it has not been run."""
+
+    @abstractmethod
+    def save_resume(self, resume: Resume) -> Resume:
+        """Write a tailored resume, stamping ``updated_at``. Returns what was stored."""
+
+    @abstractmethod
+    def get_resume(self, user_id: str, job_id: str) -> Resume | None:
+        """Load the resume written for one job, or None if there is not one yet."""
+
+    @abstractmethod
+    def save_resume_document(
+        self, user_id: str, job_id: str, suffix: str, content: bytes
+    ) -> str:
+        """Write a rendered resume file and say where it landed.
+
+        The record in :meth:`save_resume` is the data; this is the artefact a
+        person opens or emails. Kept separate because the two go to different
+        places once this is not a laptop: Firestore for the record, object
+        storage for the file.
+
+        Args:
+            user_id: Whose resume this is.
+            job_id: The posting it targets.
+            suffix: File extension without the dot, ``md`` or ``docx``.
+            content: The rendered bytes.
+
+        Returns:
+            A human-readable location, e.g. a path or a URL.
+        """
