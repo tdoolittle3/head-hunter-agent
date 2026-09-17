@@ -1,0 +1,103 @@
+{
+  "user_id": "local",
+  "created_at": "2026-09-17T00:00:00Z",
+  "updated_at": "2026-09-17T00:00:00Z",
+  "identity": {
+    "full_name": "Jordan Reyes",
+    "email": "jordan@example.com",
+    "phone": null,
+    "location": "Denver, CO",
+    "links": [],
+    "headline": null
+  },
+  "goals": [
+    "Move into a staff-level data platform role."
+  ],
+  "constraints": {
+    "locations": [],
+    "remote": null,
+    "comp_floor": null,
+    "comp_currency": "USD",
+    "earliest_start": null,
+    "notes": null
+  },
+  "roles": [
+    {
+      "id": "role-eval-0001",
+      "company": "Acme Foods",
+      "title": "Staff Engineer",
+      "start_date": "2019-01",
+      "end_date": "2024-11",
+      "is_current": false,
+      "location": null,
+      "employment_type": null,
+      "summary": "Owned the billing and reporting stack."
+    }
+  ],
+  "accomplishments": [
+    {
+      "id": "acc-eval-0001",
+      "role_id": "role-eval-0001",
+      "situation": "Month-end close took nine days and blocked the finance team.",
+      "action": "Rewrote the billing pipeline as incremental Airflow jobs.",
+      "result": "Close dropped from nine days to two.",
+      "metrics": [
+        "9 days to 2 days"
+      ],
+      "tools": [
+        "Python",
+        "Airflow",
+        "BigQuery"
+      ],
+      "evidence_id": "ev-eval-0001",
+      "source_text": "I rewrote the billing pipeline at Acme as incremental Airflow jobs and cut month-end close from nine days to two. I did the design and most of the build."
+    }
+  ],
+  "skills": [
+    {
+      "name": "Python",
+      "level": "expert",
+      "years": 8.0,
+      "evidence_ids": [
+        "ev-eval-0002"
+      ],
+      "last_used": "2024"
+    },
+    {
+      "name": "Airflow",
+      "level": "strong",
+      "years": 4.0,
+      "evidence_ids": [
+        "ev-eval-0002"
+      ],
+      "last_used": "2024"
+    },
+    {
+      "name": "BigQuery",
+      "level": "working",
+      "years": 3.0,
+      "evidence_ids": [
+        "ev-eval-0001"
+      ],
+      "last_used": "2024"
+    }
+  ],
+  "education": [],
+  "evidence": [
+    {
+      "id": "ev-eval-0001",
+      "source_text": "I rewrote the billing pipeline at Acme as incremental Airflow jobs and cut month-end close from nine days to two. I did the design and most of the build.",
+      "source": "interview",
+      "captured_at": "2026-09-17T00:00:00Z",
+      "note": null
+    },
+    {
+      "id": "ev-eval-0002",
+      "source_text": "I've been writing Python daily for about eight years, mostly data work, and I'd call myself strong with Airflow after four years of running it in production.",
+      "source": "interview",
+      "captured_at": "2026-09-17T00:00:00Z",
+      "note": null
+    }
+  ],
+  "open_questions": []
+}

@@ -1,0 +1,40 @@
+{
+  "user_id": "local",
+  "created_at": "2026-09-17T00:00:00Z",
+  "updated_at": "2026-09-17T00:00:00Z",
+  "id": "job-eval-0001",
+  "source": "paste",
+  "company": "Globex",
+  "title": "Senior Data Engineer",
+  "location": "Remote (US)",
+  "remote": "remote",
+  "comp": "$180,000 - $210,000",
+  "requirements": [
+    {
+      "id": "req-eval-0001",
+      "text": "5+ years building production data pipelines",
+      "kind": "required",
+      "category": "experience"
+    },
+    {
+      "id": "req-eval-0002",
+      "text": "Active Secret security clearance (must be current)",
+      "kind": "required",
+      "category": "credential"
+    },
+    {
+      "id": "req-eval-0003",
+      "text": "Strong Python",
+      "kind": "required",
+      "category": "skill"
+    },
+    {
+      "id": "req-eval-0004",
+      "text": "BigQuery experience",
+      "kind": "preferred",
+      "category": "skill"
+    }
+  ],
+  "raw_text": "Senior Data Engineer - Globex - Remote (US)\nYou will own our ingestion and billing pipelines end to end.\nRequirements:\n- 5+ years building production data pipelines\n- Active Secret security clearance (must be current)\n- Strong Python\nNice to have:\n- BigQuery experience\nCompensation: $180,000 - $210,000.",
+  "url": null
+}
