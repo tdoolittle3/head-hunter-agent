@@ -8,6 +8,9 @@ to open these files and read them:
       profile.json
       jobs/<job_id>.json
       fit_reports/<job_id>.json
+      resumes/<job_id>.json   the record
+      resumes/<job_id>.md     the canonical rendering
+      resumes/<job_id>.docx   the file you send
 
 Writes go to a temporary file and are then moved into place, so a crash
 mid-write cannot leave a half-written profile behind.
@@ -23,10 +26,10 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from head_hunter import config
-from head_hunter.schemas import FitReport, JobPosting, Profile
+from head_hunter.schemas import FitReport, JobPosting, Profile, Resume
 from head_hunter.storage.repository import Repository
 
-_Record = TypeVar("_Record", Profile, JobPosting, FitReport)
+_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume)
 
 _UNSAFE_ID_PARTS = ("/", "\\", "..", "\0")
 
@@ -66,6 +69,14 @@ class JsonRepository(Repository):
     def fit_report_path(self, job_id: str) -> Path:
         """Where the fit report for one posting lives."""
         return self.root / "fit_reports" / f"{_check_id(job_id, 'job_id')}.json"
+
+    def resume_path(self, job_id: str, suffix: str = "json") -> Path:
+        """Where the resume record or a rendering of it lives."""
+        return (
+            self.root
+            / "resumes"
+            / f"{_check_id(job_id, 'job_id')}.{_check_id(suffix, 'suffix')}"
+        )
 
     # Reading and writing -------------------------------------------------
 
@@ -148,3 +159,29 @@ class JsonRepository(Repository):
         if report is None or report.user_id != user_id:
             return None
         return report
+
+    def save_resume(self, resume: Resume) -> Resume:
+        """Write a resume to ``data/resumes/<job_id>.json``."""
+        return self._write(self.resume_path(resume.job_id), resume)
+
+    def get_resume(self, user_id: str, job_id: str) -> Resume | None:
+        """Load the resume for one job, or None if none has been written."""
+        resume = self._read(self.resume_path(job_id), Resume)
+        if resume is None or resume.user_id != user_id:
+            return None
+        return resume
+
+    def save_resume_document(
+        self, user_id: str, job_id: str, suffix: str, content: bytes
+    ) -> str:
+        """Write a rendering next to the record and return its path."""
+        path = self.resume_path(job_id, suffix)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        try:
+            tmp.write_bytes(content)
+            os.replace(tmp, path)
+        except OSError as exc:
+            tmp.unlink(missing_ok=True)
+            raise StorageError(f"Could not write {path}: {exc}") from exc
+        return str(path)

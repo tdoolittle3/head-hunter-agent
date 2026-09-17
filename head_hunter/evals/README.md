@@ -18,7 +18,31 @@ two numbers is what makes the case worth running.
 clearance into the fixture profile, which would make this eval quietly
 meaningless.
 
+## `no_invented_experience`
+
+The Phase 2 counterpart, and the case AGENTS.md requires: the profile lacks a
+requirement, and the correct resume omits it.
+
+Same fixture pair. The posting requires an active Secret clearance and the
+profile says nothing about one, so the right resume does not mention a
+clearance *at all* — not claimed, not hinted at, not covered with vague
+language — and the Tailor says plainly that it left it off.
+
+What makes this case different from `blocker_detection` is that a wrong answer
+here is a file the user could send to an employer. The Python guarantee behind
+it is `render_resume`, which refuses to produce a `.docx` for a resume whose
+bullets did not trace; `tests/test_resume_tools.py` proves that refusal with no
+model involved.
+
 ## Running it
+
+Both sets run together:
+
+```bash
+make eval
+```
+
+
 
 ```bash
 pip install "google-adk[eval]"
@@ -32,10 +56,13 @@ Three things `make eval` handles for you, all of which are required:
 - **`HH_DATA_DIR=head_hunter/evals/fixture_data`** — the profile lives on disk,
   not in ADK session state, so the eval has to be pointed at the fixture store
   rather than your real `data/` directory.
-- **Deleting `fixture_data/fit_reports/` first.** A run writes a report there.
-  Leave it behind and the next run can read it back through `get_fit_report`
-  instead of doing the analysis — which is exactly how an earlier version of
-  this eval passed while doing no work at all.
+- **Deleting `fixture_data/fit_reports/` and `fixture_data/resumes/` first.**
+  A run writes into both. Leave a fit report behind and the next run can read
+  it back through `get_fit_report` instead of doing the analysis — which is
+  exactly how an earlier version of this eval passed while doing no work at
+  all. A left-behind resume is worse: the record carries its own passing
+  `validation`, so `render_resume` would hand back files without one bullet
+  being checked.
 
 `test_config.json` sets `include_intermediate_responses_in_final: true`. That
 flag is not optional here: the Fit Analyst answers *after* a transfer from the
@@ -53,8 +80,10 @@ it is a similarity score, not a real assertion, so treat a pass as a smell test
 rather than proof.
 
 The hard guarantees live in the Python tests instead: `tests/test_scoring.py`
-proves a blocker caps the score, and `tests/test_tools.py` proves a requirement
-cannot be marked met without citing evidence. Those run with no model and no
+proves a blocker caps the score, `tests/test_tools.py` proves a requirement
+cannot be marked met without citing evidence, and
+`tests/test_resume_validation.py` proves a bullet cannot introduce a number,
+tool, or employer its citations do not contain. Those run with no model and no
 cloud project.
 
 ## Adding cases
@@ -66,3 +95,5 @@ Record them through the `adk web` Eval tab, or hand-write them following
   is not simply pessimistic
 - A near-miss on years of experience, which should be `stretch`, not `blocker`
 - A posting with no requirements section at all, which Intake should refuse
+- A resume the validator rejects on the first pass, to check the Tailor really
+  fixes the named bullet rather than re-citing and hoping

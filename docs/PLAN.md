@@ -2,13 +2,14 @@
 
 
 
-Phase 0 (scaffold) and Phase 1 (the proof-of-concept loop), both shipped.
+Phase 0 (scaffold), Phase 1 (the proof-of-concept loop) and Phase 2 (the
+resume), all shipped.
 
 
 
-The Phase 1 write-up is at the bottom. The Phase 0 record is kept above it
+The write-ups run newest last. The Phase 0 record is kept first because the
 
-because the decisions it pinned still govern the code.
+decisions it pinned still govern the code.
 
 
 
@@ -959,4 +960,243 @@ gathered afterwards. Say the word and it goes back.
 - The profile grows without bound in one JSON file. Fine for one person and a
 
   few dozen accomplishments; it is a Firestore problem, not a Phase 1 one.
+
+
+---
+
+
+
+# Phase 2: the resume
+
+
+
+Profile + posting + fit report -> a tailored resume whose every bullet traces
+
+back to something the user said, rendered to Markdown and Word. The loop the
+
+README promised in its diagram now exists in code.
+
+
+
+## What shipped
+
+
+
+| Piece | Where | Note |
+
+|---|---|---|
+
+| Traceability validator | `head_hunter/resume_validation.py` | Plain Python. The model cannot argue with it |
+
+| Markdown + DOCX rendering | `head_hunter/resume_render.py` | Markdown is canonical; DOCX is rendered from it |
+
+| Resume Tailor | `head_hunter/agents/resume_tailor/` | Generator; the validator is the critic |
+
+| Resume storage | `head_hunter/storage/` | Record, `.md` and `.docx` per posting |
+
+| Tools | `head_hunter/tools/resume_tools.py` | Context, save-and-validate, render |
+
+| Eval set | `head_hunter/evals/no_invented_experience.evalset.json` | The profile lacks a credential; the resume omits it |
+
+
+
+140 tests, `ruff` clean. 48 of those are new.
+
+
+
+## The guarantee, and where it actually lives
+
+
+
+Rule 2 is a product promise: the resume can only say what the profile says.
+
+Three things enforce it, none of them a prompt.
+
+
+
+- **The schema.** `ResumeBullet` has `min_length=1` on `evidence_ids`, so a
+
+  bullet with no citation cannot be constructed at all.
+
+- **`validate_resume()`.** Deterministic Python, run inside `save_resume`. It
+
+  fails a bullet that uses a number, tool, company, or title not present in the
+
+  evidence that bullet cites.
+
+- **`render_resume()` is a separate call, and it refuses.** A resume whose
+
+  validation did not pass cannot produce a `.docx`. This is the one that
+
+  matters, because the `.docx` is the artefact that reaches an employer. A test
+
+  asserts the two tools stay separate, so nobody merges them for convenience.
+
+
+
+## Two decisions inside the validator
+
+
+
+**P5 — "The cited evidence" means the records anchored to it, not only
+
+`source_text`.** A bullet citing `ev-1234` may draw on the accomplishment built
+
+from that evidence (situation, action, result, metrics, tools), that
+
+accomplishment's role (company, title), and any skill citing it.
+
+
+
+The alternative — `source_text` alone — fails honest bullets. The fixture
+
+profile has a user who said "nine days to two" and an accomplishment whose
+
+`metrics` field records "9 days to 2 days". A resume saying "cut close from 9
+
+days to 2" is good writing about a true thing, and a strict validator would
+
+reject it.
+
+
+
+Widening this far and no further is what keeps the interesting failure
+
+reachable: a bullet citing the Acme evidence while naming Northwind as the
+
+employer still fails, because Northwind's role is anchored to different
+
+evidence. There is a test for exactly that.
+
+
+
+**P6 — It fails closed.** Term checking is heuristic: a capitalized word
+
+mid-sentence that is not in the stop-list is treated as a name that has to
+
+trace. An unusual verb can therefore be flagged wrongly.
+
+
+
+That is the error to make. The failure names the exact word, the Tailor rewords
+
+the bullet, and the reworded bullet is usually shorter. The opposite error ships
+
+a resume claiming something the user never said, which is the single thing this
+
+system exists not to do. The prompt tells the Tailor this outright so it does
+
+not waste turns arguing.
+
+
+
+## Things found by running it, not by reading docs
+
+
+
+**`$2M` passed the number check on evidence that said "two days".** The first
+
+version emitted both the bare value and the scaled value as acceptable forms of
+
+a magnitude, so `$2M` matched a corpus containing `2`. A magnitude now replaces
+
+the bare value rather than joining it: `$2M`, `2M`, `2 million` and `2000000`
+
+all reduce to one string, and none of them matches a bare `2`.
+
+
+
+**`S3` was being read as the number 3.** Any digit in a token made it a
+
+quantity, so "migrated to S3" passed against evidence mentioning "three". A
+
+token is now a quantity only when nothing alphabetic precedes its digits, which
+
+keeps `$2M` and `40%` as numbers while sending `S3`, `k8s` and `Python3` to the
+
+name check, where they belong.
+
+
+
+Both were found by running candidate bullets against the fixture profile before
+
+writing a single test. Neither would have been caught by reading the code.
+
+
+
+## The DOCX is deliberately boring
+
+
+
+No tables, no columns, no text boxes, no headers or footers, no images —
+
+`tests/test_resume_render.py` asserts their absence. An applicant tracking
+
+system reads this before a person does, and it parses a single column of styled
+
+paragraphs reliably and everything else badly.
+
+
+
+`render_docx` raises on Markdown it does not understand rather than skipping
+
+the line. A resume quietly missing a bullet is a worse failure than a render
+
+that refuses to run (rule 6).
+
+
+
+## Known rough edges
+
+
+
+- **The stop-list is a list of English words in a Python file.** It works, and
+
+  it is the least elegant thing in the repo. A dictionary lookup would be
+
+  better; it would also be a new dependency, which the kickoff prompt says not
+
+  to add without asking.
+
+- **`validate_resume()` checks vocabulary, not semantics.** A bullet that
+
+  reuses only words from its cited evidence but rearranges them into a claim
+
+  the user never made would pass. Closing that needs entailment checking, which
+
+  is a model call, which is the thing this function deliberately is not.
+
+- **One resume per posting.** Writing a second overwrites the first. Versioning
+
+  wants a real store, so it waits for Phase 3.
+
+- **Education sections carry no evidence.** `Education` has no `evidence_ids`
+
+  field, so a bullet about a degree has to cite something else. Worth revisiting
+
+  when the Interviewer starts collecting degrees properly.
+
+
+
+## Deferred
+
+
+
+- **`output_schema` for the Tailor.** Phase 1 decision P1 said this was where
+
+  it would earn its place. It did not: the generator-critic loop needs the
+
+  model to *re-*submit a corrected draft after reading structured failures, and
+
+  a tool round-trip does that while `output_schema` ends the turn. Tools again,
+
+  for the same reason as Phase 1.
+
+- **A cover letter.** Same evidence, same validator, different shape. Cheap to
+
+  add once someone wants it.
+
+- **PDF output.** `.docx` is what applicant tracking systems ask for. PDF needs
+
+  another dependency and has no clear demand yet.
 

@@ -20,6 +20,7 @@ from head_hunter.scoring import BLOCKER_SCORE_CAP, score_fit
 EVALS = Path(__file__).resolve().parent.parent / "head_hunter" / "evals"
 FIXTURES = EVALS / "fixture_data"
 EVAL_SET = EVALS / "blocker_detection.evalset.json"
+RESUME_EVAL_SET = EVALS / "no_invented_experience.evalset.json"
 
 
 def load_profile() -> Profile:
@@ -127,17 +128,62 @@ def test_the_eval_set_parses_and_targets_the_fixture_job() -> None:
     assert "clearance" in reference
 
 
-def test_no_fit_report_is_committed_with_the_fixtures() -> None:
-    """A committed report would let the eval pass without doing the analysis.
+def test_the_resume_eval_set_parses_and_demands_the_omission() -> None:
+    """Phase 2's hallucination case, and AGENTS.md's required eval.
+
+    The profile lacks the credential; the right resume leaves it off and says
+    so. A reference answer that merely mentioned the clearance would let a
+    resume claiming one score well on a similarity metric.
+    """
+    data = json.loads(RESUME_EVAL_SET.read_text(encoding="utf-8"))
+    case = data["eval_cases"][0]
+    prompt = case["conversation"][0]["user_content"]["parts"][0]["text"]
+    reference = case["conversation"][0]["final_response"]["parts"][0]["text"].lower()
+
+    assert "job-eval-0001" in prompt
+    assert "left off" in reference or "does not mention" in reference
+    assert "clearance" in reference
+
+
+def test_the_reference_resume_answer_only_claims_what_the_fixture_supports() -> None:
+    """Guards the reference answer itself against drifting into invention.
+
+    Every number it quotes has to be in the fixture profile, or the eval would
+    be rewarding the wrong answer.
+    """
+    profile_blob = (FIXTURES / "profile.json").read_text(encoding="utf-8").lower()
+    data = json.loads(RESUME_EVAL_SET.read_text(encoding="utf-8"))
+    reference = data["eval_cases"][0]["conversation"][0]["final_response"]["parts"][0][
+        "text"
+    ].lower()
+
+    for claim in ("nine days to two", "five a week", "acme foods", "airflow"):
+        assert claim in reference, f"reference stopped citing {claim!r}"
+        assert claim in profile_blob, f"reference claims {claim!r}, profile does not"
+
+    for invented in ("aws", "kubernetes", "snowflake", "kafka"):
+        assert invented not in reference
+
+
+def test_no_eval_output_is_committed_with_the_fixtures() -> None:
+    """A committed report or resume would let an eval pass without doing work.
 
     The Fit Analyst has a `get_fit_report` tool, so a checked-in report for the
     fixture job could be read back instead of the profile being compared to the
     posting -- which is exactly how an earlier version of this eval passed
-    while doing no work. Running the eval writes one locally, which is fine and
-    gitignored; `make eval` clears it first. Committing one is not.
+    while doing no work. The same trap exists for the Resume Tailor: a
+    committed resume record already carries a passing `validation`, so
+    `render_resume` would produce files without a single bullet being checked.
+    Running the evals writes both locally, which is fine and gitignored;
+    `make eval` clears them first. Committing them is not.
     """
     tracked = subprocess.run(
-        ["git", "ls-files", "head_hunter/evals/fixture_data/fit_reports"],
+        [
+            "git",
+            "ls-files",
+            "head_hunter/evals/fixture_data/fit_reports",
+            "head_hunter/evals/fixture_data/resumes",
+        ],
         capture_output=True,
         text=True,
         cwd=EVALS.parent.parent,
@@ -147,6 +193,7 @@ def test_no_fit_report_is_committed_with_the_fixtures() -> None:
         pytest.skip("not a git checkout")
 
     assert not tracked.stdout.strip(), (
-        "a fit report is committed under fixture_data/; remove it with "
-        "`git rm --cached` -- it is eval output, not a fixture"
+        "eval output is committed under fixture_data/; remove it with "
+        "`git rm --cached` -- a fit report or resume there is output, not a "
+        "fixture"
     )

@@ -1,0 +1,19 @@
+# One line ending everywhere: LF.
+#
+# The repo had a mix of CRLF and LF committed, so any file edited on Windows
+# came back as a whole-file diff and buried the real change. This pins it.
+#
+# `eol=lf` rather than plain `text=auto` because it fixes the working tree too.
+# `text=auto` alone leaves checkout up to each person's `core.autocrlf`, which
+# is exactly the setting that differs between machines and caused the mix.
+* text=auto eol=lf
+
+# Makefile recipes need real tabs, but line endings still normalize.
+Makefile text eol=lf
+
+# Never touch bytes that are not text. A rendered resume is a zip.
+*.docx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary

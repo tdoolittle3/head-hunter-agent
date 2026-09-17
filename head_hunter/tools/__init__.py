@@ -19,6 +19,11 @@ from head_hunter.tools.profile_tools import (
     load_profile,
     save_profile,
 )
+from head_hunter.tools.resume_tools import (
+    load_tailoring_context,
+    render_resume,
+    save_resume,
+)
 
 INTERVIEWER_TOOLS = [
     load_profile,
@@ -33,6 +38,8 @@ INTAKE_TOOLS = [prepare_job_text, save_job_posting, list_jobs]
 
 FIT_ANALYST_TOOLS = [load_job_and_profile, save_fit_report, get_fit_report]
 
+RESUME_TAILOR_TOOLS = [load_tailoring_context, save_resume, render_resume]
+
 COORDINATOR_TOOLS = [load_profile, list_jobs]
 
 __all__ = [
@@ -40,6 +47,7 @@ __all__ = [
     "FIT_ANALYST_TOOLS",
     "INTAKE_TOOLS",
     "INTERVIEWER_TOOLS",
+    "RESUME_TAILOR_TOOLS",
     "ToolError",
     "add_accomplishment",
     "add_open_question",
@@ -49,9 +57,12 @@ __all__ = [
     "list_jobs",
     "load_job_and_profile",
     "load_profile",
+    "load_tailoring_context",
     "prepare_job_text",
+    "render_resume",
     "report_tool_error",
     "save_fit_report",
     "save_job_posting",
     "save_profile",
+    "save_resume",
 ]

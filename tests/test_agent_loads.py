@@ -30,11 +30,12 @@ def test_instruction_comes_from_the_markdown_prompt() -> None:
     assert "No invented experience" in root_agent.instruction
 
 
-def test_coordinator_routes_to_the_three_specialists() -> None:
+def test_coordinator_routes_to_the_four_specialists() -> None:
     assert [a.name for a in root_agent.sub_agents] == [
         "interviewer",
         "intake",
         "fit_analyst",
+        "resume_tailor",
     ]
 
 
@@ -46,7 +47,7 @@ def test_only_the_interviewer_can_write_career_facts() -> None:
     by_agent[root_agent.name] = {t.__name__ for t in root_agent.tools}
 
     assert writers <= by_agent["interviewer"]
-    for name in ("intake", "fit_analyst", "head_hunter"):
+    for name in ("intake", "fit_analyst", "resume_tailor", "head_hunter"):
         assert not (writers & by_agent[name]), f"{name} can write career facts"
 
 
@@ -63,6 +64,17 @@ def test_the_fit_analyst_cannot_be_handed_a_score() -> None:
     from head_hunter.tools import save_fit_report
 
     assert "score" not in inspect.signature(save_fit_report).parameters
+
+
+def test_the_resume_tailor_cannot_render_without_validating_first() -> None:
+    """Rule 2: rendering is a separate call, so it can refuse an unchecked draft.
+
+    If these ever became one tool, a failing draft could reach a .docx.
+    """
+    from head_hunter.tools import RESUME_TAILOR_TOOLS
+
+    names = {tool.__name__ for tool in RESUME_TAILOR_TOOLS}
+    assert names == {"load_tailoring_context", "save_resume", "render_resume"}
 
 
 def test_missing_prompt_file_raises() -> None:
