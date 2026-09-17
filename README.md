@@ -102,9 +102,13 @@ Point `adk web` at `head_hunter` rather than at the repo root: ADK searches for
 agents recursively, so from the root it lists every agent folder separately and
 you have to guess which one is the front door.
 
-If the chat window returns a 404 about the model, your Google Cloud project does
-not serve `gemini-3.5-flash`. Uncomment `HH_MODEL` in `.env` and set it to a
-model your project does have — no code change needed.
+If the chat window returns a 404 about the model, your Google Cloud project
+does not serve the default. Uncomment `HH_MODEL` in `.env`, set it to a model
+your project does have, and restart — no code change needed.
+
+The default is `gemini-2.5-flash` rather than ADK's own `gemini-3.5-flash`,
+which returned 404 in every project tried. Vertex only serves the models a
+given project and region are entitled to, and that varies.
 
 ### Common commands
 
@@ -166,7 +170,7 @@ IAM, and billing are all per-project, so a test run that burns through quota
 should not be able to take down anything you depend on.
 
 If your project does not serve the default model, pass it through:
-`make deploy-test TEST_PROJECT=... MODEL=gemini-2.5-flash`.
+`make deploy-test TEST_PROJECT=... MODEL=gemini-2.5-pro`.
 
 ### What is still missing before this is really "production"
 
