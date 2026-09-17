@@ -107,6 +107,61 @@ right-hand side directly:
 | `make lint` | `ruff check .` and `ruff format --check .` |
 | `make format` | `ruff format .` and `ruff check --fix .` |
 | `make check` | lint then test; must pass before opening a PR |
+| `make deploy-test` | deploy to the test Cloud Run service |
+| `make proxy-test` | open an authenticated tunnel to it |
+
+## Deploying
+
+> **Read this first.** The profile is stored as JSON on local disk. Cloud Run
+> filesystems are in-memory, per-instance, and wiped on restart, so a deployed
+> Head Hunter **forgets everything** — the profile, and the conversation. That
+> is what Firestore in Phase 3 fixes. Until then, treat a deploy as a smoke test
+> that the container builds and the agent answers, **not** as somewhere to keep
+> a real career profile.
+
+`adk deploy` generates the Dockerfile; there is nothing to write. It copies only
+the `head_hunter/` folder, which is why `head_hunter/requirements.txt` exists
+separately from the one at the repo root — a test keeps the two in sync.
+
+Once per project:
+
+```bash
+make enable-apis PROJECT=your-project-id
+```
+
+Then deploy:
+
+```bash
+make deploy-test TEST_PROJECT=your-test-project-id
+```
+
+The service is deployed **private** (`--no-allow-unauthenticated`). Reach it
+through an authenticated tunnel rather than opening it to the internet:
+
+```bash
+make proxy-test TEST_PROJECT=your-test-project-id
+```
+
+That serves it on `localhost:8080`. Production is the same shape:
+
+```bash
+make deploy-prod PROD_PROJECT=your-prod-project-id
+```
+
+Use two separate Google Cloud projects for test and production. Vertex quota,
+IAM, and billing are all per-project, so a test run that burns through quota
+should not be able to take down anything you depend on.
+
+If your project does not serve the default model, pass it through:
+`make deploy-test TEST_PROJECT=... MODEL=gemini-2.5-flash`.
+
+### What is still missing before this is really "production"
+
+1. **Firestore** (Phase 3) — without it the profile does not survive a restart.
+2. **A persistent session service** — `--session_service_uri` is unset, so chat
+   history is in-memory too.
+3. **Auth** — `HH_USER_ID` is fixed to `local`, so everyone who reaches the
+   service shares one profile. Keep it private until multi-user lands.
 
 ## Project layout
 
@@ -114,6 +169,7 @@ right-hand side directly:
 head_hunter/
   agent.py       entry point adk web loads; re-exports the coordinator
   agents/        one folder per agent: agent.py + prompt.md
+  requirements.txt  container-only deps (adk deploy copies just this folder)
   schemas/       Pydantic models: Profile, JobPosting, FitReport, Resume, JournalEntry
   storage/       repository interface + JSON (Phase 1) and Firestore (Phase 3) backends
   tools/         functions agents can call (save_profile, load_jobs, ...)
