@@ -30,6 +30,7 @@ from head_hunter.schemas import (
     UnmetRequirement,
     ValidationFailure,
     ValidationResult,
+    new_id,
 )
 
 EVIDENCE = Evidence(
@@ -240,3 +241,27 @@ def test_thin_profile_detection() -> None:
     rich = PROFILE.model_copy(deep=True)
     rich.accomplishments = [ACCOMPLISHMENT] * 3
     assert not rich.is_thin()
+
+
+def test_ids_are_wide_enough_to_not_collide() -> None:
+    """Two bytes gave a ~7% collision rate over 100 same-day ids. Four does not."""
+    ids = {new_id("ev") for _ in range(2000)}
+    assert len(ids) == 2000
+
+    suffix = new_id("ev").rsplit("-", 1)[1]
+    assert len(suffix) == 8
+
+
+def test_an_id_avoids_the_ones_already_taken() -> None:
+    taken = {new_id("ev") for _ in range(20)}
+    assert new_id("ev", taken) not in taken
+
+
+def test_a_skill_needs_at_least_one_piece_of_evidence() -> None:
+    with pytest.raises(ValidationError):
+        Skill(name="Kubernetes", level="expert", evidence_ids=[])
+
+
+def test_a_citation_cannot_be_blank() -> None:
+    with pytest.raises(ValidationError):
+        Skill(name="Kubernetes", level="expert", evidence_ids=["   "])

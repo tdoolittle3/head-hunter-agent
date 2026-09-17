@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import Field
 
 from head_hunter.schemas.base import HeadHunterModel, StoredRecord
-from head_hunter.schemas.evidence import Evidence
+from head_hunter.schemas.evidence import Evidence, EvidenceId
 from head_hunter.schemas.ids import new_id
 
 SkillLevel = Literal["aware", "working", "strong", "expert"]
@@ -100,7 +100,7 @@ class Accomplishment(HeadHunterModel):
     tools: list[str] = Field(
         default_factory=list, description="Technologies or systems used."
     )
-    evidence_id: str = Field(description="The Evidence record this came from.")
+    evidence_id: EvidenceId = Field(description="The Evidence record this came from.")
     source_text: str = Field(
         description="The user's own words. A convenience copy of the Evidence text."
     )
@@ -112,8 +112,9 @@ class Skill(HeadHunterModel):
     name: str = Field(description="The skill, e.g. 'Kubernetes' or 'contract law'.")
     level: SkillLevel = Field(description="How strong they are with it.")
     years: float | None = Field(default=None, description="Years of real use.")
-    evidence_ids: list[str] = Field(
-        default_factory=list, description="Evidence records that back this up."
+    evidence_ids: list[EvidenceId] = Field(
+        min_length=1,
+        description="Evidence records that back this up. Never empty.",
     )
     last_used: str | None = Field(
         default=None, description="Roughly when last used, e.g. 2025 or 'current'."

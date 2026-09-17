@@ -13,13 +13,22 @@ to open these files and read them:
       resumes/<job_id>.docx   the file you send
 
 Writes go to a temporary file and are then moved into place, so a crash
-mid-write cannot leave a half-written profile behind.
+mid-write cannot leave a half-written profile behind. The temporary name is
+unique per write: two processes saving at once used to share one ``.tmp`` file
+and could interleave their bytes into it.
+
+Concurrency beyond that is handled two ways. New records are created with
+``create_only``, so a duplicate id cannot silently overwrite an existing
+posting. The profile -- the one record every tool does load, modify, save on --
+is written with an optimistic version check: if it changed on disk since the
+caller read it, the write is refused rather than clobbering the other update.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import TypeVar
 
@@ -80,17 +89,43 @@ class JsonRepository(Repository):
 
     # Reading and writing -------------------------------------------------
 
-    def _write(self, path: Path, record: _Record) -> _Record:
+    @staticmethod
+    def _tmp_path(path: Path) -> Path:
+        """A temporary name no other writer will pick, next to the target."""
+        return path.with_name(f"{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp")
+
+    def _write(self, path: Path, record: _Record, create_only: bool = False) -> _Record:
+        """Write one record, replacing the file at ``path`` atomically.
+
+        Args:
+            path: Where the record belongs.
+            record: The record to write. Its ``updated_at`` is set here.
+            create_only: Refuse to write if something is already there. Use this
+                for new records, so an id collision surfaces as an error instead
+                of overwriting somebody else's posting.
+        """
         record.touch()
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = record.model_dump_json(indent=2) + "\n"
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp = self._tmp_path(path)
         try:
             tmp.write_text(payload, encoding="utf-8")
+            if create_only:
+                # O_EXCL reserves the name atomically; the replace below fills
+                # it. A crash in between leaves an empty file, which _read
+                # rejects loudly rather than treating it as valid data.
+                try:
+                    os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                except FileExistsError:
+                    raise StorageError(
+                        f"{path} already exists. Refusing to overwrite an "
+                        "existing record with a new one."
+                    ) from None
             os.replace(tmp, path)
         except OSError as exc:
-            tmp.unlink(missing_ok=True)
             raise StorageError(f"Could not write {path}: {exc}") from exc
+        finally:
+            tmp.unlink(missing_ok=True)
         return record
 
     def _read(self, path: Path, model: type[_Record]) -> _Record | None:
@@ -123,7 +158,22 @@ class JsonRepository(Repository):
         return profile
 
     def save_profile(self, profile: Profile) -> Profile:
-        """Write the profile to ``data/profile.json``."""
+        """Write the profile to ``data/profile.json``.
+
+        Refuses the write if the stored profile changed since this one was
+        loaded. Every Interviewer tool reads the whole profile, appends to it,
+        and writes it back, so without this check two overlapping sessions would
+        each save their own copy and the later one would erase the earlier one's
+        accomplishment.
+        """
+        stored = self._read(self.profile_path, Profile)
+        if stored is not None and stored.updated_at > profile.updated_at:
+            raise StorageError(
+                f"{self.profile_path} changed since it was loaded "
+                f"(stored {stored.updated_at.isoformat()}, writing "
+                f"{profile.updated_at.isoformat()}). Load the profile again and "
+                "redo this change so the other update is not lost."
+            )
         return self._write(self.profile_path, profile)
 
     def list_jobs(self, user_id: str) -> list[JobPosting]:
@@ -145,9 +195,14 @@ class JsonRepository(Repository):
             return None
         return job
 
-    def save_job(self, job: JobPosting) -> JobPosting:
-        """Write a posting to ``data/jobs/<job_id>.json``."""
-        return self._write(self.job_path(job.id), job)
+    def save_job(self, job: JobPosting, create_only: bool = False) -> JobPosting:
+        """Write a posting to ``data/jobs/<job_id>.json``.
+
+        Args:
+            job: The posting to store.
+            create_only: Refuse to overwrite an existing posting with this id.
+        """
+        return self._write(self.job_path(job.id), job, create_only=create_only)
 
     def save_fit_report(self, report: FitReport) -> FitReport:
         """Write a report to ``data/fit_reports/<job_id>.json``."""
@@ -177,11 +232,12 @@ class JsonRepository(Repository):
         """Write a rendering next to the record and return its path."""
         path = self.resume_path(job_id, suffix)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp = self._tmp_path(path)
         try:
             tmp.write_bytes(content)
             os.replace(tmp, path)
         except OSError as exc:
-            tmp.unlink(missing_ok=True)
             raise StorageError(f"Could not write {path}: {exc}") from exc
+        finally:
+            tmp.unlink(missing_ok=True)
         return str(path)

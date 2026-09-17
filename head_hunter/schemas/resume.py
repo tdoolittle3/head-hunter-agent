@@ -12,13 +12,14 @@ from __future__ import annotations
 from pydantic import Field
 
 from head_hunter.schemas.base import HeadHunterModel, StoredRecord
+from head_hunter.schemas.evidence import EvidenceId
 
 
 class ResumeBullet(HeadHunterModel):
     """One line of a resume, tied to the evidence that supports it."""
 
     text: str = Field(description="The bullet as it will appear on the page.")
-    evidence_ids: list[str] = Field(
+    evidence_ids: list[EvidenceId] = Field(
         min_length=1,
         description="Evidence supporting every claim in the text. Never empty.",
     )

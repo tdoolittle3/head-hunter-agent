@@ -131,3 +131,48 @@ def test_ids_cannot_escape_the_data_directory(repo: JsonRepository) -> None:
 def test_no_temp_files_are_left_behind(repo: JsonRepository) -> None:
     repo.save_job(make_job("job-a"))
     assert list(repo.root.rglob("*.tmp")) == []
+
+
+def test_a_new_job_cannot_overwrite_an_existing_one(repo: JsonRepository) -> None:
+    repo.save_job(make_job("job-a"))
+
+    with pytest.raises(StorageError, match="Refusing to overwrite"):
+        repo.save_job(make_job("job-a"), create_only=True)
+
+    # Without create_only it is still an ordinary update.
+    repo.save_job(make_job("job-a"))
+
+
+def test_a_stale_profile_write_is_refused(repo: JsonRepository) -> None:
+    """Two sessions that both loaded the profile must not silently clobber."""
+    repo.save_profile(Profile(user_id=USER, goals=["First."]))
+
+    first = repo.get_profile(USER)
+    second = repo.get_profile(USER)
+    assert first is not None and second is not None
+
+    first.goals = ["First session's answer."]
+    repo.save_profile(first)
+
+    second.goals = ["Second session's answer."]
+    with pytest.raises(StorageError, match="changed since it was loaded"):
+        repo.save_profile(second)
+
+    stored = repo.get_profile(USER)
+    assert stored is not None
+    assert stored.goals == ["First session's answer."]
+
+
+def test_temporary_files_do_not_collide_between_writers(repo: JsonRepository) -> None:
+    path = repo.profile_path
+    names = {repo._tmp_path(path).name for _ in range(50)}
+    assert len(names) == 50
+    assert all(name.endswith(".tmp") for name in names)
+
+
+def test_no_temporary_files_are_left_behind(repo: JsonRepository) -> None:
+    repo.save_profile(Profile(user_id=USER))
+    repo.save_job(make_job("job-a"), create_only=True)
+    repo.save_resume_document(USER, "job-a", "md", b"# Resume\n")
+
+    assert list(repo.root.rglob("*.tmp")) == []

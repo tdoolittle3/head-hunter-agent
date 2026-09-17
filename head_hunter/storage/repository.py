@@ -35,8 +35,12 @@ class Repository(ABC):
         """Load one posting, or None if there is no such job."""
 
     @abstractmethod
-    def save_job(self, job: JobPosting) -> JobPosting:
-        """Write a posting, stamping ``updated_at``. Returns what was stored."""
+    def save_job(self, job: JobPosting, create_only: bool = False) -> JobPosting:
+        """Write a posting, stamping ``updated_at``. Returns what was stored.
+
+        With ``create_only``, a posting whose id is already taken must be
+        refused rather than overwritten.
+        """
 
     @abstractmethod
     def save_fit_report(self, report: FitReport) -> FitReport:
