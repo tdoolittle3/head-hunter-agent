@@ -1146,6 +1146,118 @@ that refuses to run (rule 6).
 
 
 
+## What running the evals against a live model found
+
+
+
+Run against `head-hunter-agent` in us-central1 on `gemini-2.5-flash`, after the
+
+code was written and the unit tests were green.
+
+
+
+**The coordinator asked instead of writing.** The first `no_invented_experience`
+
+run scored 0.17 and failed. The Head Hunter replied "would you like me to run a
+
+fit analysis first?" and stopped. That gate came from a line this phase added to
+
+its prompt — offer the analysis before the resume — and it is the same
+
+stop-and-ask brittleness Phase 1 hit with a thin profile. Fixed by inverting it:
+
+hand off, let the Tailor write, and offer the analysis *afterwards*. They asked
+
+for a resume, not for a conversation about resumes.
+
+
+
+Worth saying plainly: a prompt line added in this phase broke the phase's own
+
+eval, and only running it caught that. The unit tests could not have.
+
+
+
+**The two eval sets were reading each other's output.** `make eval` cleared
+
+`fixture_data/` once and then ran both sets, so the blocker run left a fit
+
+report on disk that the resume run picked up. It now clears before each set.
+
+Same class of bug as the Phase 1 one where a committed fit report let the eval
+
+pass while doing no work.
+
+
+
+**The validator earned its keep on the first live draft.** Round one was
+
+rejected twice over:
+
+
+
+- `Airflow-based` — "airflow" is in the evidence, "based" is not, and the
+
+  hyphen-splitting rule requires both halves. A false positive, exactly the
+
+  P6 behaviour. The Tailor reworded to "incremental Airflow jobs", which is
+
+  better writing anyway.
+
+- `BigQuery (3 years)` — a true catch, and the more interesting one. The
+
+  fixture's BigQuery skill carries `years: 3.0`, but the evidence it cites
+
+  never says three years. The Tailor dropped the number rather than the skill.
+
+  The user never said it in their own words, so it does not go on the page.
+
+
+
+Round two passed all six bullets, rendered, and the finished resume mentions no
+
+clearance anywhere.
+
+
+
+**The resume eval is flaky, and the fit eval is not.** Five `adk eval` runs of
+
+`no_invented_experience`: two passed, three failed. Every failure is identical
+
+— the run stops dead after `load_tailoring_context` returns, the third model
+
+call comes back after ~8s, ADK turns it into no event, and the invocation ends
+
+with no error and exit code 0.
+
+
+
+It is not our code and it is not the context cache. Driven through a `Runner`
+
+directly the same conversation completed 3/3, with and without
+
+`context_cache_config`, including one run that needed three validator rounds.
+
+Token usage is nowhere near a limit (8k total at the high end). The difference
+
+is the eval harness.
+
+
+
+The honest read is that a single-turn eval of a six-call agent loop is a far
+
+more fragile thing than the two-call fit analysis, and `response_match_score`
+
+is not worth hardening it for. The guarantees live in
+
+`tests/test_resume_validation.py` and `tests/test_resume_tools.py`, which need
+
+no model and no cloud project. Treat a green resume eval as a smell test and a
+
+red one as worth re-running once before believing it.
+
+
+
 ## Known rough edges
 
 

@@ -46,8 +46,11 @@ format:  ## Reformat the code
 
 eval:  ## Run the ADK eval sets against the fixture profile (needs a GCP project)
 	@echo "Requires: pip install 'google-adk[eval]'"
+	@# Cleared before EACH set, not once: the blocker run leaves a fit report
+	@# behind, and the resume run would then read it. Each set must stand alone.
 	@rm -rf head_hunter/evals/fixture_data/fit_reports head_hunter/evals/fixture_data/resumes
 	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/blocker_detection.evalset.json --config_file_path head_hunter/evals/test_config.json
+	@rm -rf head_hunter/evals/fixture_data/fit_reports head_hunter/evals/fixture_data/resumes
 	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/no_invented_experience.evalset.json --config_file_path head_hunter/evals/test_config.json
 
 check: lint test  ## Everything that must pass before opening a PR
