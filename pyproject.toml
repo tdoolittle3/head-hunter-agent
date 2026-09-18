@@ -42,7 +42,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D103"]  # test functions carry their intent in the name
+# Test functions carry their intent in the name, and the fakes that stand in
+# for a cloud client are described by the class docstring above them -- a
+# docstring per stub method would bury what the fake is doing.
+"tests/*" = ["D102", "D103", "D107"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

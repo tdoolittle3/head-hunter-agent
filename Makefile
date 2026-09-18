@@ -45,12 +45,13 @@ MODEL ?=
 # gets in; this list only decides whose browser can render the UI.
 ALLOWED_ORIGINS ?= regex:(?:http://localhost:8080|https://.*\.cloudshell\.dev)
 
-# The container runs as a non-root user in a root-owned /app, so the JSON store
-# cannot live at the default ./data. /tmp is writable -- and wiped on every
-# restart, which is exactly why this is a smoke test and not somewhere to keep
-# a real career profile. Firestore (Phase 3) is what fixes that.
+# Deployments store in Firestore, because a Cloud Run filesystem is
+# per-instance and wiped on every restart. HH_DATA_DIR still points somewhere
+# writable: the container runs as a non-root user in a root-owned /app, so if
+# anything ever falls back to the JSON store it must not try to write ./data.
 DEPLOY_ENV = --env GOOGLE_GENAI_USE_VERTEXAI=TRUE \
              --env HH_USER_ID=local \
+             --env HH_STORAGE=firestore \
              --env HH_DATA_DIR=/tmp/head-hunter-data \
              $(if $(MODEL),--env HH_MODEL=$(MODEL),)
 

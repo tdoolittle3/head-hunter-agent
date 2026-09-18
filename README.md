@@ -66,7 +66,7 @@ flowchart TD
 | **0 – Scaffold** | Repo, docs, ADK skeleton, schemas, hello-world agent, both collaborators running `adk web` | ✅ |
 | **1 – Proof of concept** | Interviewer → Profile → paste a JD → Fit Report. The loop we iterate on. | ✅ |
 | **2 – Resume** | Resume Tailor, traceability validator, Markdown + DOCX output, eval cases | ✅ |
-| **3 – Connectors & deploy** | Gmail Inbox Scout, one job-board API, Firestore, Cloud Run | |
+| **3 – Connectors & deploy** | Gmail Inbox Scout, one job-board API, Firestore, Cloud Run | Firestore + Cloud Run done; connectors pending |
 | **4 – Coach** | Application tracker, interview debriefs, pattern reflection | |
 | **Later** | Auth and multi-user, billing, web UI | |
 
@@ -142,12 +142,14 @@ right-hand side directly:
 
 ## Deploying
 
-> **Read this first.** The profile is stored as JSON on local disk. Cloud Run
-> filesystems are in-memory, per-instance, and wiped on restart, so a deployed
-> Head Hunter **forgets everything** — the profile, and the conversation. That
-> is what Firestore in Phase 3 fixes. Until then, treat a deploy as a smoke test
-> that the container builds and the agent answers, **not** as somewhere to keep
-> a real career profile.
+> **Read this first.** Deployments store in **Firestore**, so the profile,
+> jobs, fit reports and resumes now survive a restart — the deployed agent
+> keeps your career profile for real. What does *not* survive is the
+> **conversation**: sessions are still held in memory, so reopening the chat
+> starts a fresh thread against the same stored profile.
+>
+> A local checkout still defaults to the JSON store under `data/`, which needs
+> no Google Cloud project. `HH_STORAGE` picks between them.
 
 `adk deploy` generates the Dockerfile; there is nothing to write. It copies only
 the `head_hunter/` folder, which is why `head_hunter/requirements.txt` exists
@@ -194,11 +196,17 @@ Production stays manual — run the Deploy workflow by hand and choose `prod`.
 
 ### What is still missing before this is really "production"
 
-1. **Firestore** (Phase 3) — without it the profile does not survive a restart.
-2. **A persistent session service** — `--session_service_uri` is unset, so chat
-   history is in-memory too.
-3. **Auth** — `HH_USER_ID` is fixed to `local`, so everyone who reaches the
+1. **A persistent session service** — the stored records survive a restart now,
+   but chat history does not. ADK 2.9.1 ships a `FirestoreSessionService`, and
+   there is no URI scheme registered for it (`memory`, `agentengine`, `sqlite`,
+   `postgresql`, `mysql` only) and `App` takes no session service, so wiring it
+   up means registering a custom scheme or running Cloud SQL.
+2. **Auth** — `HH_USER_ID` is fixed to `local`, so everyone who reaches the
    service shares one profile. Keep it private until multi-user lands.
+3. **A real lock on the profile** — the stale-write guard compares `updated_at`
+   timestamps, which cannot tell apart two writes inside one clock tick. Fine
+   for one user; replace it with a version counter or a Firestore transaction
+   before concurrent writers are real.
 
 ## Project layout
 
