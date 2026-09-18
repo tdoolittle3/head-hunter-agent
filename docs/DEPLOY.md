@@ -153,9 +153,10 @@ gcloud may install the `cloud-run-proxy` component the first time.
 
 ### If the UI is a blank page
 
-The deploy targets pass `--allow_origins=$(PROXY_ORIGIN)`, defaulting to
-`http://localhost:8080` — the address the proxy serves on. Deploy without it and
-the page loads as an empty shell.
+Your browser's origin is not in `ALLOWED_ORIGINS`. The default covers both
+supported routes — `http://localhost:8080` for the proxy on a laptop, and a
+`regex:` pattern for Cloud Shell Web Preview, whose host carries a per-session
+id and cannot be written out literally.
 
 The dev UI is an Angular app loaded as ES modules, and module scripts are always
 fetched in CORS mode, so they carry an `Origin` header even same-origin. ADK
@@ -163,12 +164,23 @@ answers every one with `403 Forbidden: origin not allowed` and no script ever
 runs. Stylesheets are not fetched in CORS mode, so the CSS loads and you get a
 styled blank page rather than an obvious error.
 
-If you reach the service from somewhere other than the proxy's default port —
-Cloud Shell Web Preview, say — pass that origin instead:
+To confirm that is what you are hitting, ask for a script with an `Origin`
+header. A `403` means the origin is missing from the list:
 
 ```bash
-make deploy-test TEST_PROJECT=head-hunter-agent PROXY_ORIGIN=https://8080-cs-...cloudshell.dev
+curl -s -o /dev/null -w "%{http_code}\n" -H "Origin: $YOUR_ORIGIN" "$YOUR_URL/dev-ui/"
 ```
+
+Reaching it from somewhere else again — a different port, a tunnel — means
+adding that origin. The variable is a space-separated list:
+
+```bash
+make deploy-test TEST_PROJECT=head-hunter-agent \
+  ALLOWED_ORIGINS="http://localhost:8080 https://my-tunnel.example"
+```
+
+Widening this does not widen access. The service stays private and IAM decides
+who may call it; the origin list only decides whose browser can render the UI.
 
 For a scripted check, call the API with an identity token instead:
 
@@ -177,12 +189,43 @@ curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
   "$(gcloud run services describe head-hunter-test --project=head-hunter-agent --region=us-central1 --format='value(status.url)')/list-apps"
 ```
 
-To let a teammate in, grant them the invoker role — do not make the service
-public. `HH_USER_ID` is fixed to `local`, so everyone who reaches it shares one
-career profile.
+## Giving a collaborator access
+
+Grant the invoker role — do not make the service public:
 
 ```bash
 gcloud run services add-iam-policy-binding head-hunter-test \
   --project=head-hunter-agent --region=us-central1 \
   --member="user:them@example.com" --role="roles/run.invoker"
 ```
+
+Then send them this, which needs nothing installed:
+
+> 1. Open <https://shell.cloud.google.com> and sign in with the Google account
+>    you were granted access on.
+> 2. Paste this and press Enter:
+>
+>    ```
+>    gcloud run services proxy head-hunter-test --project=head-hunter-agent --region=us-central1
+>    ```
+>
+>    Say yes if it offers to install a component. Leave it running — it will sit
+>    there printing nothing, which is correct.
+> 3. Click **Web Preview** (the eye icon, top right of the Cloud Shell toolbar)
+>    and choose **Preview on port 8080**.
+> 4. A new tab opens with the chat UI. Pick `head_hunter` from the dropdown at
+>    the top and start typing.
+>
+> If the page is blank, tell me the port — Web Preview sometimes picks 8081 and
+> the address has to be allowed before it will load.
+
+Two things they should know before they spend real effort in it:
+
+- **Nothing is saved.** Cloud Run wipes the container's disk on restart and
+  sessions are held in memory, so a profile can vanish between visits. Until
+  Firestore lands (Phase 3) this is for trying the agent, not for building a
+  real career profile.
+- **You share one profile.** `HH_USER_ID` is fixed to `local`, so everyone who
+  reaches the service reads and writes the same record — and because each Cloud
+  Run instance has its own disk, two people can even see different versions of
+  it at the same time.
