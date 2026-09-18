@@ -70,7 +70,29 @@ coordinator, so without it ADK records the root agent's `final_response` as
 `null` and the case scores 0.0 no matter how good the answer was.
 
 Verified passing against ADK 2.9.1 with `gemini-2.5-flash`: score 35, three
-requirements met with citations, the clearance marked `blocker`.
+requirements met with citations, the clearance marked `blocker`. Passed both
+times it was run in the Phase 2 session.
+
+## `no_invented_experience` is flaky — re-run a red one once
+
+Five runs against `gemini-2.5-flash`: **two passed, three failed.** Every
+failure looks the same — the run stops right after `load_tailoring_context`
+returns, ADK produces no event from the next model response, and the invocation
+ends with no error and exit code 0.
+
+It is not the agent code and it is not the context cache. The same conversation
+driven through a `Runner` directly completed 3/3, with and without
+`context_cache_config`, including a run that needed three validator rounds.
+Token usage is far from any limit. The difference is the eval harness, and a
+single-turn eval of a six-call agent loop is simply a more fragile thing than
+the two-call fit analysis.
+
+So: a red `no_invented_experience` is worth re-running once before you believe
+it. If it fails repeatedly *and* the failure looks different from the one above
+— a resume that mentions a clearance, say — that is a real regression.
+
+The guarantees that do not flake are `tests/test_resume_validation.py` and
+`tests/test_resume_tools.py`. They need no model and no cloud project.
 
 ## A caveat on the metric
 
