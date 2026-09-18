@@ -159,6 +159,10 @@ Once per project:
 make enable-apis PROJECT=your-project-id
 ```
 
+That enables the APIs but not the IAM a source deploy needs — see
+[`docs/DEPLOY.md`](docs/DEPLOY.md) for the two role grants, the GitHub Actions
+setup, and the Git Bash trap that corrupts `HH_DATA_DIR` on Windows.
+
 Then deploy:
 
 ```bash
@@ -184,6 +188,9 @@ should not be able to take down anything you depend on.
 
 If your project does not serve the default model, pass it through:
 `make deploy-test TEST_PROJECT=... MODEL=gemini-2.5-pro`.
+
+A push to `main` deploys to the test service automatically via GitHub Actions.
+Production stays manual — run the Deploy workflow by hand and choose `prod`.
 
 ### What is still missing before this is really "production"
 
@@ -215,7 +222,7 @@ data/            local JSON store (gitignored)
   jobs/            one file per posting
   fit_reports/     one file per analysis
   resumes/         one .json record, .md and .docx per posting
-docs/            deeper design notes, including PLAN.md
+docs/            deeper design notes: PLAN.md, DEPLOY.md
 tests/           pytest suite
 AGENTS.md        conventions for AI coding agents and humans alike
 CLAUDE.md        imports AGENTS.md for Claude Code
