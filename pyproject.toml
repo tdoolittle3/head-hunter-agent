@@ -49,3 +49,7 @@ convention = "google"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The tests import head_hunter, and the package is not installed in CI.
+# Without this, bare `pytest` only finds it when the repo root happens to be on
+# sys.path -- which `python -m pytest` does implicitly and `pytest` does not.
+pythonpath = ["."]
