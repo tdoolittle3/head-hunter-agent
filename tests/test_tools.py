@@ -371,3 +371,63 @@ def test_the_model_cannot_choose_the_score() -> None:
 
     assert result["score"] <= 35
     assert result["blockers"] == ["Active Secret clearance"]
+
+
+def test_a_met_requirement_cannot_cite_evidence_that_does_not_exist() -> None:
+    """The finding that started this: a fabricated id used to score 100/100."""
+    job_id, loaded = seeded_profile_and_job()
+    reqs = {r["text"]: r["requirement_id"] for r in loaded["job"]["requirements"]}
+    real = loaded["profile"]["evidence"][0]["evidence_id"]
+
+    with pytest.raises(ToolError, match="not in the profile"):
+        save_fit_report(
+            job_id=job_id,
+            met=[
+                {
+                    "requirement_id": reqs["5+ years building data pipelines"],
+                    "evidence_ids": [real],
+                },
+                {"requirement_id": reqs["BigQuery"], "evidence_ids": [real]},
+                {
+                    "requirement_id": reqs["Active Secret clearance"],
+                    "evidence_ids": ["ev-does-not-exist"],
+                },
+            ],
+            unmet=[],
+            summary="Perfect fit.",
+        )
+
+
+def test_a_blank_citation_is_not_a_citation() -> None:
+    job_id, loaded = seeded_profile_and_job()
+    reqs = loaded["job"]["requirements"]
+
+    with pytest.raises(ToolError, match="cites no evidence"):
+        save_fit_report(
+            job_id=job_id,
+            met=[{"requirement_id": reqs[0]["requirement_id"], "evidence_ids": ["  "]}],
+            unmet=[],
+            summary="s",
+        )
+
+
+def test_citations_must_be_a_list_not_a_bare_string() -> None:
+    """A string would otherwise be iterated one character at a time."""
+    job_id, loaded = seeded_profile_and_job()
+    reqs = loaded["job"]["requirements"]
+    real = loaded["profile"]["evidence"][0]["evidence_id"]
+
+    with pytest.raises(ToolError, match="single string"):
+        save_fit_report(
+            job_id=job_id,
+            met=[{"requirement_id": reqs[0]["requirement_id"], "evidence_ids": real}],
+            unmet=[],
+            summary="s",
+        )
+
+
+def test_a_fit_report_needs_a_profile_before_anything_can_be_met() -> None:
+    job_id = seeded_job()["job_id"]
+
+    with pytest.raises(ToolError, match="no career profile"):
+        save_fit_report(job_id=job_id, met=[], unmet=[], summary="s")

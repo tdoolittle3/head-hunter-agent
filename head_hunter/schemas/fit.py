@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import Field
 
 from head_hunter.schemas.base import HeadHunterModel, StoredRecord
+from head_hunter.schemas.evidence import EvidenceId
 from head_hunter.schemas.job import Requirement
 
 GapKind = Literal["stretch", "blocker"]
@@ -22,7 +23,7 @@ class MetRequirement(HeadHunterModel):
     """A requirement the user meets, with the evidence that proves it."""
 
     requirement: Requirement = Field(description="The requirement being met.")
-    evidence_ids: list[str] = Field(
+    evidence_ids: list[EvidenceId] = Field(
         min_length=1, description="Evidence backing this. Never empty."
     )
     note: str | None = Field(

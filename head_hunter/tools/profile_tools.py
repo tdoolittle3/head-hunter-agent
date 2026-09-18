@@ -17,6 +17,7 @@ from head_hunter.schemas import (
     Profile,
     Role,
     Skill,
+    new_id,
 )
 from head_hunter.tools._base import ToolError, current_user_id, repository
 
@@ -51,8 +52,18 @@ def _require_source_text(source_text: str, what: str) -> str:
 
 
 def _add_evidence(profile: Profile, source_text: str, note: str | None) -> Evidence:
-    """Append a new Evidence record and return it."""
-    evidence = Evidence(source_text=source_text, source="interview", note=note)
+    """Append a new Evidence record and return it.
+
+    The id is checked against the ids already in this profile. A duplicate would
+    make every citation to it ambiguous, and the profile is small enough that
+    the check is free.
+    """
+    evidence = Evidence(
+        id=new_id("ev", {e.id for e in profile.evidence}),
+        source_text=source_text,
+        source="interview",
+        note=note,
+    )
     profile.evidence.append(evidence)
     return evidence
 
@@ -216,6 +227,7 @@ def add_role(
     """
     profile = _load_or_create()
     role = Role(
+        id=new_id("role", {r.id for r in profile.roles}),
         company=company,
         title=title,
         start_date=start_date,
@@ -270,6 +282,7 @@ def add_accomplishment(
     evidence = _add_evidence(profile, cleaned, note=f"accomplishment at {role_id}")
 
     accomplishment = Accomplishment(
+        id=new_id("acc", {a.id for a in profile.accomplishments}),
         role_id=role_id,
         situation=situation,
         action=action,
@@ -381,6 +394,7 @@ def add_open_question(
     """
     profile = _load_or_create()
     open_question = OpenQuestion(
+        id=new_id("q", {q.id for q in profile.open_questions}),
         question=question,
         hypothesis=hypothesis,
         about_role_id=about_role_id,

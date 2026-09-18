@@ -10,7 +10,7 @@ result back through :func:`save_job_posting`.
 from __future__ import annotations
 
 from head_hunter.jd_text import clean_job_text, looks_like_job_posting
-from head_hunter.schemas import JobPosting, Requirement
+from head_hunter.schemas import JobPosting, Requirement, new_id
 from head_hunter.tools._base import ToolError, current_user_id, repository
 
 REQUIREMENT_KINDS = ("required", "preferred")
@@ -113,7 +113,10 @@ def save_job_posting(
 
         parsed.append(Requirement(text=text, kind=kind, category=category))
 
+    repo = repository()
+    taken = {existing.id for existing in repo.list_jobs(current_user_id())}
     job = JobPosting(
+        id=new_id("job", taken),
         user_id=current_user_id(),
         source="paste",
         company=company,
@@ -125,7 +128,7 @@ def save_job_posting(
         raw_text=raw_text,
         url=url,
     )
-    repository().save_job(job)
+    repo.save_job(job, create_only=True)
 
     return {
         "status": "saved",

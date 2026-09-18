@@ -9,14 +9,21 @@ Nothing else in the system is allowed to own "what the user actually said".
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
 from head_hunter.schemas.base import HeadHunterModel, utc_now
 from head_hunter.schemas.ids import new_id
 
 EvidenceSource = Literal["interview", "resume_upload", "email", "user_edit"]
+
+EvidenceId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+"""A citation. Blank and whitespace-only ids are rejected at the schema edge, so
+a list of citations cannot be padded out with strings that point at nothing.
+Whether the id names a real Evidence record is checked where the profile is in
+hand -- see ``validate_resume`` and ``save_fit_report``.
+"""
 
 
 class Evidence(HeadHunterModel):
