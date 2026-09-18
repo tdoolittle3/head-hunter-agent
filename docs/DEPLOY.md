@@ -153,10 +153,10 @@ gcloud may install the `cloud-run-proxy` component the first time.
 
 ### If the UI is a blank page
 
-Your browser's origin is not in `ALLOWED_ORIGINS`. The default covers both
-supported routes — `http://localhost:8080` for the proxy on a laptop, and a
-`regex:` pattern for Cloud Shell Web Preview, whose host carries a per-session
-id and cannot be written out literally.
+Your browser's origin is not matched by `ALLOWED_ORIGINS`. The default is one
+`regex:` pattern covering both supported routes — `http://localhost:8080` for
+the proxy on a laptop, and Cloud Shell Web Preview, whose host carries a
+per-session id and cannot be written out literally.
 
 The dev UI is an Angular app loaded as ES modules, and module scripts are always
 fetched in CORS mode, so they carry an `Origin` header even same-origin. ADK
@@ -172,12 +172,18 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Origin: $YOUR_ORIGIN" "$YOUR_URL/de
 ```
 
 Reaching it from somewhere else again — a different port, a tunnel — means
-adding that origin. The variable is a space-separated list:
+extending the pattern. It has to stay a **single** value:
 
 ```bash
 make deploy-test TEST_PROJECT=head-hunter-agent \
-  ALLOWED_ORIGINS="http://localhost:8080 https://my-tunnel.example"
+  ALLOWED_ORIGINS='regex:(?:http://localhost:8080|https://my-tunnel\.example)'
 ```
+
+Do not pass `--allow_origins` twice. `adk deploy cloud_run` joins repeated
+values with a comma into one flag and the server never splits it back apart, so
+the container allows a single nonsense origin and refuses every real one — the
+same blank page, with the added charm that the origin you had working before
+stops working too.
 
 Widening this does not widen access. The service stays private and IAM decides
 who may call it; the origin list only decides whose browser can render the UI.
