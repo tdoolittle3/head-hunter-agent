@@ -12,6 +12,15 @@ PROD_SERVICE ?= head-hunter
 # Only set this if your project does not serve the default model.
 MODEL ?=
 
+# `gcloud run services proxy` serves the UI from http://localhost:8080, so that
+# is the origin the browser sends. The dev UI is an Angular app loaded as ES
+# modules, and module scripts are always fetched in CORS mode -- they carry an
+# Origin header even same-origin. Without this flag ADK answers every one of
+# them with "403 Forbidden: origin not allowed", the scripts never load, and the
+# page renders as a blank shell. Stylesheets are not fetched in CORS mode, so
+# they load fine, which makes the failure look stranger than it is.
+PROXY_ORIGIN ?= http://localhost:8080
+
 # The container runs as a non-root user in a root-owned /app, so the JSON store
 # cannot live at the default ./data. /tmp is writable -- and wiped on every
 # restart, which is exactly why this is a smoke test and not somewhere to keep
@@ -65,6 +74,7 @@ deploy-test:  ## Deploy to the test Cloud Run service (private)
 	adk deploy cloud_run \
 	  --project=$(TEST_PROJECT) --region=$(REGION) \
 	  --service_name=$(TEST_SERVICE) --with_ui \
+	  --allow_origins=$(PROXY_ORIGIN) \
 	  $(DEPLOY_ENV) \
 	  head_hunter -- --no-allow-unauthenticated
 
@@ -73,6 +83,7 @@ deploy-prod:  ## Deploy to the production Cloud Run service (private). See READM
 	adk deploy cloud_run \
 	  --project=$(PROD_PROJECT) --region=$(REGION) \
 	  --service_name=$(PROD_SERVICE) --with_ui \
+	  --allow_origins=$(PROXY_ORIGIN) \
 	  $(DEPLOY_ENV) \
 	  head_hunter -- --no-allow-unauthenticated --min-instances=1
 

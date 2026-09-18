@@ -151,6 +151,25 @@ make proxy-test TEST_PROJECT=head-hunter-agent
 That serves the ADK web UI on `http://localhost:8080`, authenticated as you.
 gcloud may install the `cloud-run-proxy` component the first time.
 
+### If the UI is a blank page
+
+The deploy targets pass `--allow_origins=$(PROXY_ORIGIN)`, defaulting to
+`http://localhost:8080` — the address the proxy serves on. Deploy without it and
+the page loads as an empty shell.
+
+The dev UI is an Angular app loaded as ES modules, and module scripts are always
+fetched in CORS mode, so they carry an `Origin` header even same-origin. ADK
+answers every one with `403 Forbidden: origin not allowed` and no script ever
+runs. Stylesheets are not fetched in CORS mode, so the CSS loads and you get a
+styled blank page rather than an obvious error.
+
+If you reach the service from somewhere other than the proxy's default port —
+Cloud Shell Web Preview, say — pass that origin instead:
+
+```bash
+make deploy-test TEST_PROJECT=head-hunter-agent PROXY_ORIGIN=https://8080-cs-...cloudshell.dev
+```
+
 For a scripted check, call the API with an identity token instead:
 
 ```bash
