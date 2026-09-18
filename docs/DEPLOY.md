@@ -31,7 +31,27 @@ gcloud projects add-iam-policy-binding head-hunter-agent \
   --role="roles/cloudbuild.builds.builder"
 ```
 
-### 3. Let the running service call Vertex
+### 3. Create the Firestore database
+
+Deployments store through Firestore, so this has to exist before the first
+deploy. One database per project; `(default)` is the one you get unless you name
+another.
+
+```bash
+gcloud firestore databases create --location=us-central1 --project=head-hunter-agent --type=firestore-native
+```
+
+Give the runtime service account access to it. Firestore uses the Datastore IAM
+roles — `roles/firestore.*` does not exist, which is a reliable half-hour lost
+if you go looking for it:
+
+```bash
+gcloud projects add-iam-policy-binding head-hunter-agent \
+  --member="serviceAccount:362441896728-compute@developer.gserviceaccount.com" \
+  --role="roles/datastore.user"
+```
+
+### 4. Let the running service call Vertex
 
 The same account is the Cloud Run runtime identity. Without this the container
 starts and then every model call returns 403.

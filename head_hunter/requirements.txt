@@ -15,6 +15,10 @@
 # Versions must match the repo-root requirements.txt.
 # tests/test_requirements_in_sync.py fails the build if they drift.
 
+# The Phase 3 store. Cloud Run wipes its filesystem on restart, so the JSON
+# backend cannot keep a profile; this is what makes a deployment remember.
+google-cloud-firestore==2.31.0
+
 pydantic==2.13.5
 python-docx==1.2.0
 

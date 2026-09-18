@@ -2,6 +2,7 @@
 # Versions below are the ones Phase 0 was built and tested against.
 
 google-adk==2.9.1
+google-cloud-firestore==2.31.0
 pydantic==2.13.5
 python-docx==1.2.0
 python-dotenv==1.2.3

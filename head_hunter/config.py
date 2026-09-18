@@ -47,3 +47,25 @@ def data_dir() -> Path:
     path = Path(os.environ.get("HH_DATA_DIR", "./data")).expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def storage_backend() -> str:
+    """Return which store the tools read and write through: ``json`` or ``firestore``.
+
+    Defaults to ``json`` so a laptop checkout keeps working with no Google Cloud
+    project and no credentials. Deployments set ``HH_STORAGE=firestore``,
+    because a Cloud Run filesystem does not survive a restart.
+    """
+    value = os.environ.get("HH_STORAGE", "json").strip().lower()
+    if value not in ("json", "firestore"):
+        raise ValueError(f"HH_STORAGE must be 'json' or 'firestore', not {value!r}.")
+    return value
+
+
+def firestore_database() -> str:
+    """Return the Firestore database id to use.
+
+    ``(default)`` is the database a project gets when it has only one, and is
+    what ``gcloud firestore databases create`` makes unless told otherwise.
+    """
+    return os.environ.get("HH_FIRESTORE_DATABASE", "(default)")

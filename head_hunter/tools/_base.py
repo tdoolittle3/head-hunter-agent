@@ -46,7 +46,16 @@ def report_tool_error(
 
 
 def repository() -> Repository:
-    """Return the repository the tools should read and write through."""
+    """Return the repository the tools should read and write through.
+
+    ``HH_STORAGE`` picks the backend. It defaults to the JSON store, so a
+    checkout with no Google Cloud project still runs; deployments set
+    ``firestore``, because a Cloud Run filesystem does not survive a restart.
+    """
+    if config.storage_backend() == "firestore":
+        from head_hunter.storage import FirestoreRepository
+
+        return FirestoreRepository()
     return JsonRepository()
 
 
