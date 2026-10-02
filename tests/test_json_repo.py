@@ -112,7 +112,7 @@ def test_other_users_records_are_not_returned(repo: JsonRepository) -> None:
 def test_profile_for_the_wrong_user_raises(repo: JsonRepository) -> None:
     repo.save_profile(Profile(user_id="someone-else"))
 
-    with pytest.raises(StorageError, match="HH_USER_ID"):
+    with pytest.raises(StorageError, match="HH_SINGLE_USER"):
         repo.get_profile(USER)
 
 

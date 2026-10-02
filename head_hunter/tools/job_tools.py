@@ -9,6 +9,8 @@ result back through :func:`save_job_posting`.
 
 from __future__ import annotations
 
+from google.adk.tools import ToolContext
+
 from head_hunter.jd_text import clean_job_text, looks_like_job_posting
 from head_hunter.schemas import JobPosting, Requirement, new_id
 from head_hunter.tools._base import ToolError, current_user_id, repository
@@ -54,6 +56,7 @@ def save_job_posting(
     remote: str | None = None,
     comp: str | None = None,
     url: str | None = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Save a job posting you have broken into structured requirements.
 
@@ -75,6 +78,8 @@ def save_job_posting(
         remote: Remote, hybrid, or onsite, as the posting states it.
         comp: Compensation exactly as written, e.g. '$140k-$170k'.
         url: Where the posting came from.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The new ``job_id``, needed to run a fit analysis.
@@ -114,10 +119,10 @@ def save_job_posting(
         parsed.append(Requirement(text=text, kind=kind, category=category))
 
     repo = repository()
-    taken = {existing.id for existing in repo.list_jobs(current_user_id())}
+    taken = {existing.id for existing in repo.list_jobs(current_user_id(tool_context))}
     job = JobPosting(
         id=new_id("job", taken),
-        user_id=current_user_id(),
+        user_id=current_user_id(tool_context),
         source="paste",
         company=company,
         title=title,
@@ -140,7 +145,7 @@ def save_job_posting(
     }
 
 
-def list_jobs() -> dict:
+def list_jobs(tool_context: ToolContext | None = None) -> dict:
     """List the postings already saved, newest first.
 
     Use this when the user refers to a job without giving you an id.
@@ -148,7 +153,7 @@ def list_jobs() -> dict:
     Returns:
         Each saved posting's id, company, title, and requirement count.
     """
-    jobs = repository().list_jobs(current_user_id())
+    jobs = repository().list_jobs(current_user_id(tool_context))
     return {
         "status": "ok",
         "count": len(jobs),

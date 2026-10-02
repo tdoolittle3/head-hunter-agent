@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from google.adk.tools import ToolContext
+
 from head_hunter import config
 from head_hunter.storage import JsonRepository, Repository
 
@@ -59,6 +61,24 @@ def repository() -> Repository:
     return JsonRepository()
 
 
-def current_user_id() -> str:
-    """Return the user id every stored record is keyed by."""
-    return config.user_id()
+def current_user_id(tool_context: ToolContext | None = None) -> str:
+    """Return the user id every stored record is keyed by.
+
+    ``HH_SINGLE_USER``, when set, pins everyone to one profile: that is the
+    local and private-test setup. Otherwise the id comes from the ADK session,
+    which is where a verified identity will arrive once auth is in front of the
+    service.
+
+    The id is never a tool argument. If it were, the model could be talked into
+    asking for someone else's profile.
+    """
+    pinned = config.single_user()
+    if pinned:
+        return pinned
+    user_id = getattr(tool_context, "user_id", None)
+    if not user_id:
+        raise ToolError(
+            "Cannot tell whose profile this is: the session carries no user id "
+            "and HH_SINGLE_USER is not set."
+        )
+    return user_id

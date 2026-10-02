@@ -33,13 +33,15 @@ def model() -> str:
     return os.environ.get("HH_MODEL", DEFAULT_MODEL)
 
 
-def user_id() -> str:
-    """Return the id the stored records belong to.
+def single_user() -> str | None:
+    """Return the id everyone is pinned to, or None to use the session's own.
 
-    Single user for now, but the value is threaded through every record because
-    this becomes a multi-user product.
+    Set ``HH_SINGLE_USER`` for a laptop or a private one-person deployment,
+    where every session is the same person. Leave it unset anywhere more than
+    one person could reach the service: a value here overrides the real id for
+    everybody.
     """
-    return os.environ.get("HH_USER_ID", "local")
+    return os.environ.get("HH_SINGLE_USER", "").strip() or None
 
 
 def data_dir() -> Path:

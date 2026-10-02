@@ -10,6 +10,8 @@ and it stores it in a field named ``hypothesis`` that no resume can ever cite.
 
 from __future__ import annotations
 
+from google.adk.tools import ToolContext
+
 from head_hunter.schemas import (
     Accomplishment,
     Evidence,
@@ -26,10 +28,10 @@ SKILL_LEVELS = ("aware", "working", "strong", "expert")
 MIN_SOURCE_TEXT_WORDS = 4
 
 
-def _load_or_create() -> Profile:
+def _load_or_create(tool_context: ToolContext | None) -> Profile:
     """Return the stored profile, or a fresh empty one for a new user."""
-    return repository().get_profile(current_user_id()) or Profile(
-        user_id=current_user_id()
+    return repository().get_profile(current_user_id(tool_context)) or Profile(
+        user_id=current_user_id(tool_context)
     )
 
 
@@ -68,7 +70,7 @@ def _add_evidence(profile: Profile, source_text: str, note: str | None) -> Evide
     return evidence
 
 
-def load_profile() -> dict:
+def load_profile(tool_context: ToolContext | None = None) -> dict:
     """Load the current state of the user's career profile.
 
     Call this at the start of every interview session so you can pick up where
@@ -79,7 +81,7 @@ def load_profile() -> dict:
         how many accomplishments and skills exist, and the open questions
         left over from previous sessions.
     """
-    profile = repository().get_profile(current_user_id())
+    profile = repository().get_profile(current_user_id(tool_context))
     if profile is None:
         return {
             "status": "empty",
@@ -138,6 +140,7 @@ def save_profile(
     remote_preference: str | None = None,
     comp_floor: float | None = None,
     earliest_start: str | None = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Save the user's identity, goals, and constraints.
 
@@ -155,11 +158,13 @@ def save_profile(
         remote_preference: One of remote, hybrid, onsite, flexible.
         comp_floor: Lowest base compensation they would accept.
         earliest_start: When they could start, in their words.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         A confirmation of what is now stored.
     """
-    profile = _load_or_create()
+    profile = _load_or_create(tool_context)
 
     for field, value in [
         ("full_name", full_name),
@@ -206,6 +211,7 @@ def add_role(
     location: str | None = None,
     employment_type: str | None = None,
     summary: str | None = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Record one job the user has held.
 
@@ -221,11 +227,13 @@ def add_role(
         location: Where the role was based.
         employment_type: Full-time, contract, founder, and so on.
         summary: What the role was, in one or two sentences.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The new ``role_id``, which you need for add_accomplishment.
     """
-    profile = _load_or_create()
+    profile = _load_or_create(tool_context)
     role = Role(
         id=new_id("role", {r.id for r in profile.roles}),
         company=company,
@@ -250,6 +258,7 @@ def add_accomplishment(
     source_text: str,
     metrics: list[str] | None = None,
     tools: list[str] | None = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Record something the user did, in situation / action / result form.
 
@@ -265,11 +274,13 @@ def add_accomplishment(
             This is the evidence a resume bullet will later have to cite.
         metrics: Numbers they gave, e.g. ['cut close from 9 days to 2'].
         tools: Technologies or systems they named.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The new accomplishment id and the evidence id backing it.
     """
-    profile = _load_or_create()
+    profile = _load_or_create(tool_context)
 
     if not any(r.id == role_id for r in profile.roles):
         known = ", ".join(f"{r.id} ({r.company})" for r in profile.roles) or "none yet"
@@ -309,6 +320,7 @@ def add_skill(
     source_text: str,
     years: float | None = None,
     last_used: str | None = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Record a skill the user has, backed by what they said about it.
 
@@ -321,6 +333,8 @@ def add_skill(
         source_text: The user's own words about this skill.
         years: Years of real use.
         last_used: Roughly when last used, e.g. '2024' or 'current'.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         Confirmation and the evidence id backing the skill.
@@ -331,7 +345,7 @@ def add_skill(
             "If the user was vague, ask them to place it on that scale."
         )
 
-    profile = _load_or_create()
+    profile = _load_or_create(tool_context)
     cleaned = _require_source_text(source_text, f"the skill {name!r}")
     evidence = _add_evidence(profile, cleaned, note=f"skill: {name}")
 
@@ -371,6 +385,7 @@ def add_open_question(
     about_role_id: str | None = None,
     about_skill: str | None = None,
     reason: str | None = None,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Record something you still need to ask, including a hunch you cannot confirm.
 
@@ -388,11 +403,13 @@ def add_open_question(
         about_role_id: The role this concerns, if any.
         about_skill: The skill this concerns, if any.
         reason: Why this gap matters.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         Confirmation and the new question id.
     """
-    profile = _load_or_create()
+    profile = _load_or_create(tool_context)
     open_question = OpenQuestion(
         id=new_id("q", {q.id for q in profile.open_questions}),
         question=question,

@@ -43,7 +43,7 @@ SKILL_QUOTE = "I have written Python daily for about eight years, mostly data wo
 def isolated_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point every tool at a throwaway data directory."""
     monkeypatch.setenv("HH_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("HH_USER_ID", "local")
+    monkeypatch.setenv("HH_SINGLE_USER", "local")
 
 
 @pytest.fixture

@@ -42,7 +42,7 @@ QUOTE = "I rewrote the billing pipeline and cut month-end close from nine days t
 def isolated_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point every tool at a throwaway data directory."""
     monkeypatch.setenv("HH_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("HH_USER_ID", "local")
+    monkeypatch.setenv("HH_SINGLE_USER", "local")
 
 
 def seeded_role() -> str:
