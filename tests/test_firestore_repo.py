@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import copy
 import itertools
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from google.adk.tools import FunctionTool
 
 from head_hunter.schemas import (
     FitReport,
@@ -34,7 +36,17 @@ from head_hunter.storage import (
     StorageError,
     firestore_repo,
 )
-from head_hunter.tools import _base
+from head_hunter.tools import (
+    ToolError,
+    _base,
+    get_fit_report,
+    list_jobs,
+    load_job_and_profile,
+    load_profile,
+    save_job_posting,
+    save_profile,
+    save_resume,
+)
 
 USER = "local"
 
@@ -220,7 +232,7 @@ def test_profile_for_the_wrong_user_raises(repo: FirestoreRepository) -> None:
     client = repo._client  # noqa: SLF001 - the point of the test
     client.store["users/local/profile/current"] = stored.model_dump(mode="json")
 
-    with pytest.raises(StorageError, match="HH_USER_ID"):
+    with pytest.raises(StorageError, match="HH_SINGLE_USER"):
         repo.get_profile(USER)
 
 
@@ -323,3 +335,85 @@ def test_an_unknown_backend_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValueError, match="HH_STORAGE"):
         _base.repository()
+
+
+# Two people, one deployment ---------------------------------------------
+#
+# The whole point of taking the user id from the session: the same service,
+# asked by two different ids, keeps two different careers apart.
+
+POSTING = """\
+Senior Data Engineer at Globex, Remote (US).
+About the role: you will own our ingestion and billing pipelines end to end,
+working with the finance and platform teams to keep month-end reporting fast.
+Requirements: 5+ years building data pipelines and strong Airflow experience.
+We offer $180k-$210k depending on experience and a fully remote setup.
+"""
+
+
+def session(user_id: str) -> SimpleNamespace:
+    """Stand in for the ToolContext ADK hands a tool; only ``user_id`` is read."""
+    return SimpleNamespace(user_id=user_id)
+
+
+@pytest.fixture
+def shared_store(monkeypatch: pytest.MonkeyPatch, client: FakeClient) -> FakeClient:
+    """A deployment: Firestore storage, nobody pinned, one database for all."""
+    monkeypatch.setenv("HH_STORAGE", "firestore")
+    monkeypatch.delenv("HH_SINGLE_USER", raising=False)
+    monkeypatch.setattr(firestore_repo, "_default_client", lambda: client)
+    return client
+
+
+def test_two_sessions_keep_separate_profiles(shared_store: FakeClient) -> None:
+    save_profile(full_name="Alice Adams", tool_context=session("alice"))
+
+    alices = load_profile(tool_context=session("alice"))
+    assert alices["identity"]["full_name"] == "Alice Adams"
+    assert load_profile(tool_context=session("bob"))["status"] == "empty"
+
+
+def test_one_users_job_is_invisible_to_another(shared_store: FakeClient) -> None:
+    saved = save_job_posting(
+        raw_text=POSTING,
+        requirements=[{"text": "Airflow", "kind": "required", "category": "skill"}],
+        tool_context=session("alice"),
+    )
+
+    assert list_jobs(tool_context=session("bob"))["jobs"] == []
+    with pytest.raises(ToolError):
+        load_job_and_profile(saved["job_id"], tool_context=session("bob"))
+
+
+def test_single_user_pins_everyone_to_one_profile(
+    shared_store: FakeClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HH_SINGLE_USER", "local")
+
+    assert _base.current_user_id(session("mallory")) == "local"
+    assert _base.current_user_id(None) == "local"
+
+
+def test_no_session_and_no_pin_is_refused_not_guessed(
+    shared_store: FakeClient,
+) -> None:
+    with pytest.raises(ToolError, match="HH_SINGLE_USER"):
+        _base.current_user_id(None)
+    with pytest.raises(ToolError, match="HH_SINGLE_USER"):
+        _base.current_user_id(session(""))
+
+
+def test_a_hostile_user_id_cannot_reach_another_path(
+    shared_store: FakeClient,
+) -> None:
+    with pytest.raises(StorageError, match="Unsafe user_id"):
+        save_profile(full_name="X", tool_context=session("../alice"))
+
+
+def test_the_model_cannot_see_or_set_the_user_id() -> None:
+    """ADK must hide ``tool_context`` from the schema the model is given."""
+    for tool in (save_profile, list_jobs, save_resume, get_fit_report):
+        declaration = FunctionTool(tool)._get_declaration()
+        properties = declaration.parameters.properties if declaration.parameters else {}
+        assert "tool_context" not in properties
+        assert "user_id" not in properties

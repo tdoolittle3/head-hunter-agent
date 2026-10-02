@@ -201,8 +201,11 @@ Production stays manual — run the Deploy workflow by hand and choose `prod`.
    there is no URI scheme registered for it (`memory`, `agentengine`, `sqlite`,
    `postgresql`, `mysql` only) and `App` takes no session service, so wiring it
    up means registering a custom scheme or running Cloud SQL.
-2. **Auth** — `HH_USER_ID` is fixed to `local`, so everyone who reaches the
-   service shares one profile. Keep it private until multi-user lands.
+2. **Auth** — tools now read the user id from the ADK session, so two ids
+   get two separate profiles in Firestore. But nothing verifies the id yet:
+   `adk web` has no login and gives every browser the same one. Keep the
+   service private, and leave `HH_SINGLE_USER` (which pins everyone to one
+   profile) set until a login in front of the service supplies a real id.
 3. **A real lock on the profile** — the stale-write guard compares `updated_at`
    timestamps, which cannot tell apart two writes inside one clock tick. Fine
    for one user; replace it with a version counter or a Firestore transaction

@@ -50,7 +50,7 @@ ALLOWED_ORIGINS ?= regex:(?:http://localhost:8080|https://.*\.cloudshell\.dev)
 # writable: the container runs as a non-root user in a root-owned /app, so if
 # anything ever falls back to the JSON store it must not try to write ./data.
 DEPLOY_ENV = --env GOOGLE_GENAI_USE_VERTEXAI=TRUE \
-             --env HH_USER_ID=local \
+             --env HH_SINGLE_USER=local \
              --env HH_STORAGE=firestore \
              --env HH_DATA_DIR=/tmp/head-hunter-data \
              $(if $(MODEL),--env HH_MODEL=$(MODEL),)
@@ -83,9 +83,9 @@ eval:  ## Run the ADK eval sets against the fixture profile (needs a GCP project
 	@# Cleared before EACH set, not once: the blocker run leaves a fit report
 	@# behind, and the resume run would then read it. Each set must stand alone.
 	@rm -rf head_hunter/evals/fixture_data/fit_reports head_hunter/evals/fixture_data/resumes
-	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/blocker_detection.evalset.json --config_file_path head_hunter/evals/test_config.json
+	PYTHONPATH=. HH_SINGLE_USER=local HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/blocker_detection.evalset.json --config_file_path head_hunter/evals/test_config.json
 	@rm -rf head_hunter/evals/fixture_data/fit_reports head_hunter/evals/fixture_data/resumes
-	PYTHONPATH=. HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/no_invented_experience.evalset.json --config_file_path head_hunter/evals/test_config.json
+	PYTHONPATH=. HH_SINGLE_USER=local HH_DATA_DIR=head_hunter/evals/fixture_data adk eval head_hunter head_hunter/evals/no_invented_experience.evalset.json --config_file_path head_hunter/evals/test_config.json
 
 check: lint test  ## Everything that must pass before opening a PR
 

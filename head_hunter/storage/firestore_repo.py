@@ -134,7 +134,7 @@ class FirestoreRepository(Repository):
         if profile.user_id != user_id:
             raise StorageError(
                 f"{ref.path} belongs to user {profile.user_id!r}, "
-                f"but {user_id!r} was requested. Check HH_USER_ID."
+                f"but {user_id!r} was requested. Check HH_SINGLE_USER."
             )
         return profile
 

@@ -17,6 +17,8 @@ difference between a citation and the appearance of one.
 
 from __future__ import annotations
 
+from google.adk.tools import ToolContext
+
 from head_hunter.schemas import (
     FitReport,
     MetRequirement,
@@ -29,18 +31,20 @@ from head_hunter.tools._base import ToolError, current_user_id, repository
 GAP_KINDS = ("stretch", "blocker")
 
 
-def load_job_and_profile(job_id: str) -> dict:
+def load_job_and_profile(job_id: str, tool_context: ToolContext | None = None) -> dict:
     """Load one posting and the user's profile, ready to compare.
 
     Args:
         job_id: The posting to analyse, from save_job_posting or list_jobs.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The posting's requirements (each with its id) and the profile's
         accomplishments, skills, and evidence, so you can cite evidence ids.
     """
     repo = repository()
-    user_id = current_user_id()
+    user_id = current_user_id(tool_context)
 
     job = repo.get_job(user_id, job_id)
     if job is None:
@@ -172,6 +176,7 @@ def save_fit_report(
     met: list[dict],
     unmet: list[dict],
     summary: str,
+    tool_context: ToolContext | None = None,
 ) -> dict:
     """Save your analysis. The score is computed here, not by you.
 
@@ -197,12 +202,14 @@ def save_fit_report(
         met: Requirements the profile satisfies, with citations.
         unmet: Requirements it does not, each tagged stretch or blocker.
         summary: Plain-language read on the fit, for the user.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The saved report including the computed score.
     """
     repo = repository()
-    user_id = current_user_id()
+    user_id = current_user_id(tool_context)
 
     job = repo.get_job(user_id, job_id)
     if job is None:
@@ -302,16 +309,18 @@ def save_fit_report(
     }
 
 
-def get_fit_report(job_id: str) -> dict:
+def get_fit_report(job_id: str, tool_context: ToolContext | None = None) -> dict:
     """Load a fit report that was already produced for a posting.
 
     Args:
         job_id: The posting whose report to load.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The stored report, or a note that none has been run yet.
     """
-    report = repository().get_fit_report(current_user_id(), job_id)
+    report = repository().get_fit_report(current_user_id(tool_context), job_id)
     if report is None:
         return {
             "status": "none",

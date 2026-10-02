@@ -16,7 +16,7 @@ Read `README.md` and `AGENTS.md` fully before doing anything. They define the pr
 
 ## Phase 0: scaffold
 
-1. `pyproject.toml` with ruff config, `requirements.txt`, `.env.example` (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI=TRUE, HH_USER_ID=local, HH_DATA_DIR=./data), `.gitignore` covering `.env`, `data/`, `__pycache__`, `.venv`.
+1. `pyproject.toml` with ruff config, `requirements.txt`, `.env.example` (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI=TRUE, HH_SINGLE_USER=local, HH_DATA_DIR=./data), `.gitignore` covering `.env`, `data/`, `__pycache__`, `.venv`.
 2. Package layout exactly as in the README's "Project layout" section.
 3. All Pydantic schemas listed in AGENTS.md, with docstrings and a `tests/test_schemas.py` that round-trips each through JSON.
 4. `storage/repository.py` abstract base with `get_profile / save_profile / list_jobs / get_job / save_job / save_fit_report / get_fit_report`, and `storage/json_repo.py` implementing it with one readable JSON file per record type under `HH_DATA_DIR`. Tests for the JSON repo.
@@ -35,7 +35,7 @@ Goal: a person with an empty profile can be interviewed, have a rich profile sav
 - Behaves like a sharp recruiter doing a deep intake: chronological walk through roles, then for each role digs for specific accomplishments in situation / action / result form, pushing for numbers, tools, team size, scope, and what the person would do differently. Asks one or two questions at a time, not a questionnaire.
 - Tools: `load_profile`, `save_profile`, `add_accomplishment`, `add_skill`, `add_open_question`. Every saved accomplishment and skill must carry `evidence_id` and the user's own `source_text` (their words, lightly cleaned). Inferences go into `open_questions`, not into facts.
 - Before ending a session it lists the gaps it noticed (roles without metrics, skills without evidence) and saves them as `open_questions` so the next session can resume.
-- Persist across `adk web` sessions via the repository, keyed by `HH_USER_ID`.
+- Persist across `adk web` sessions via the repository, keyed by `HH_SINGLE_USER`.
 
 ### Intake agent
 

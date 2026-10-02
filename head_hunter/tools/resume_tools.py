@@ -14,6 +14,7 @@ said.
 
 from __future__ import annotations
 
+from google.adk.tools import ToolContext
 from pydantic import ValidationError
 
 from head_hunter.resume_render import render_docx, render_markdown
@@ -22,7 +23,9 @@ from head_hunter.schemas import Resume, ResumeBullet, ResumeSection
 from head_hunter.tools._base import ToolError, current_user_id, repository
 
 
-def load_tailoring_context(job_id: str) -> dict:
+def load_tailoring_context(
+    job_id: str, tool_context: ToolContext | None = None
+) -> dict:
     """Load the posting, the profile, and the fit report, ready to write from.
 
     The ``evidence`` list is the only thing you may cite, and the only thing
@@ -30,13 +33,15 @@ def load_tailoring_context(job_id: str) -> dict:
 
     Args:
         job_id: The posting to write a resume for.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         The posting's requirements, the profile's roles, accomplishments,
         skills and evidence, and the fit report if one has been run.
     """
     repo = repository()
-    user_id = current_user_id()
+    user_id = current_user_id(tool_context)
 
     job = repo.get_job(user_id, job_id)
     if job is None:
@@ -138,7 +143,9 @@ def load_tailoring_context(job_id: str) -> dict:
     return context
 
 
-def save_resume(job_id: str, sections: list[dict]) -> dict:
+def save_resume(
+    job_id: str, sections: list[dict], tool_context: ToolContext | None = None
+) -> dict:
     """Save a resume draft. Every bullet is checked against its citations here.
 
     Every entry in ``sections`` must be a dict with:
@@ -156,12 +163,14 @@ def save_resume(job_id: str, sections: list[dict]) -> dict:
     Args:
         job_id: The posting this resume targets.
         sections: The resume body, as described above.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         Whether it passed, and every bullet that did not, with the reason.
     """
     repo = repository()
-    user_id = current_user_id()
+    user_id = current_user_id(tool_context)
 
     if not sections:
         raise ToolError("A resume with no sections is not a resume.")
@@ -250,7 +259,7 @@ def save_resume(job_id: str, sections: list[dict]) -> dict:
     }
 
 
-def render_resume(job_id: str) -> dict:
+def render_resume(job_id: str, tool_context: ToolContext | None = None) -> dict:
     """Render a validated resume to Markdown and DOCX files.
 
     Refuses to run on a resume that has not passed the traceability check.
@@ -259,13 +268,15 @@ def render_resume(job_id: str) -> dict:
 
     Args:
         job_id: The posting whose resume to render.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
 
     Returns:
         Where the two files landed, plus the Markdown itself so you can show
         the user what was written.
     """
     repo = repository()
-    user_id = current_user_id()
+    user_id = current_user_id(tool_context)
 
     resume = repo.get_resume(user_id, job_id)
     if resume is None:

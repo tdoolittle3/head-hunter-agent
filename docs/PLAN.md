@@ -117,7 +117,7 @@ Each numbered group is one commit. `ruff check .` and `pytest` pass before each.
 
 - `.env.example` — `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`,
 
-  `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `HH_USER_ID=local`, `HH_DATA_DIR=./data`,
+  `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, `HH_SINGLE_USER=local`, `HH_DATA_DIR=./data`,
 
   one comment per line
 
@@ -163,7 +163,7 @@ Each numbered group is one commit. `ruff check .` and `pytest` pass before each.
 
 - `json_repo.py` — JSON backend under `HH_DATA_DIR` (see **D3** for file layout)
 
-- `head_hunter/config.py` — reads `HH_USER_ID` / `HH_DATA_DIR` at call time
+- `head_hunter/config.py` — reads `HH_SINGLE_USER` / `HH_DATA_DIR` at call time
 
 - `tests/test_json_repo.py` — save/load round trip, missing-record behaviour,
 

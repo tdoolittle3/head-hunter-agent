@@ -76,7 +76,7 @@ is installed. Both have workarounds — but there is a trap between them.
 Run the deploy from **PowerShell**, not Git Bash:
 
 ```powershell
-python -m google.adk.cli deploy cloud_run --project=head-hunter-agent --region=us-central1 --service_name=head-hunter-test --with_ui --env GOOGLE_GENAI_USE_VERTEXAI=TRUE --env HH_USER_ID=local --env HH_DATA_DIR=/tmp/head-hunter-data head_hunter -- --no-allow-unauthenticated
+python -m google.adk.cli deploy cloud_run --project=head-hunter-agent --region=us-central1 --service_name=head-hunter-test --with_ui --env GOOGLE_GENAI_USE_VERTEXAI=TRUE --env HH_SINGLE_USER=local --env HH_DATA_DIR=/tmp/head-hunter-data head_hunter -- --no-allow-unauthenticated
 ```
 
 Git Bash rewrites any argument that looks like a Unix path into a Windows one
@@ -251,7 +251,7 @@ Two things they should know before they spend real effort in it:
   sessions are held in memory, so a profile can vanish between visits. Until
   Firestore lands (Phase 3) this is for trying the agent, not for building a
   real career profile.
-- **You share one profile.** `HH_USER_ID` is fixed to `local`, so everyone who
+- **You share one profile.** `HH_SINGLE_USER` is set to `local`, so everyone who
   reaches the service reads and writes the same record — and because each Cloud
   Run instance has its own disk, two people can even see different versions of
   it at the same time.
