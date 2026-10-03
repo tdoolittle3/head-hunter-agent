@@ -166,7 +166,17 @@ def test_an_invalid_signature_is_refused() -> None:
 
 
 def test_health_check_needs_no_sign_in(client: TestClient) -> None:
-    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_no_route_sits_on_a_path_cloud_run_reserves(client: TestClient) -> None:
+    """Cloud Run's front end answers ``/healthz`` itself, with its own 404.
+
+    A health route there is unreachable once deployed, and a smoke test pointed
+    at it fails on a healthy service. Local runs cannot show this, so guard it.
+    """
+    paths = {getattr(route, "path", "") for route in client.app.routes}
+    assert "/healthz" not in paths
 
 
 def test_me_refuses_the_anonymous_and_the_forged(client: TestClient) -> None:

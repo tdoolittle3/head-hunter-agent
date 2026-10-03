@@ -2,8 +2,9 @@
 
 ``adk web`` has no login: it hands every browser the same user id. This app is
 what stands between the internet and the agent once more than one person can
-reach it. Every route except ``/healthz`` requires a Firebase token, and the
-user id the agent runs under comes from that verified token and nowhere else.
+reach it. Every route except ``/api/health`` and the login page requires a
+Firebase token, and the user id the agent runs under comes from that verified
+token and nowhere else.
 The request body has no user field -- sending one is rejected -- so there is
 nothing a client can set to become someone else.
 
@@ -189,8 +190,8 @@ def create_app(
     def firebase_config() -> JSONResponse:
         return JSONResponse(web_config)
 
-    @api.get("/healthz")
-    def healthz() -> dict[str, str]:
+    @api.get("/api/health")
+    def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @api.get("/api/me")

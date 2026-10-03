@@ -178,7 +178,7 @@ install and no tunnel. Different Google accounts get different profiles.
 gcloud run services describe head-hunter-test --project=head-hunter-agent   --region=us-central1 --format='value(status.url)'
 ```
 
-The workflow smoke-tests every deploy: `/healthz` must answer, and chat with no
+The workflow smoke-tests every deploy: `/api/health` must answer, and chat with no
 token, or a forged one, must be refused with a `401`. If either check fails the
 deploy is marked failed. Run the same check by hand any time:
 
