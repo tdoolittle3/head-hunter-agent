@@ -15,10 +15,13 @@ Run it with ``make serve``. Which Firebase project to trust comes from
 # dependencies below at runtime, and cannot see the locally defined
 # `current_user` through a string annotation.
 
+import json
 import logging
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -36,6 +39,7 @@ from head_hunter.auth import (
 logger = logging.getLogger(__name__)
 
 APP_NAME = "head_hunter"
+WEB_DIR = Path(__file__).parent / "web"
 MAX_MESSAGE_CHARS = 20_000
 """A pasted job description is long; anything past this is not a chat message."""
 
@@ -68,6 +72,15 @@ class ChatResponse(BaseModel):
     replies: list[Reply]
 
 
+def _load_web_config() -> dict[str, str]:
+    """Read the Firebase settings the login page signs in with.
+
+    These values are public by design -- every visitor's browser receives them
+    -- so they live in the repo rather than in a secret.
+    """
+    return json.loads((WEB_DIR / "firebase-config.json").read_text(encoding="utf-8"))
+
+
 def _build_runner() -> Runner:
     # Imported here so importing this module (and its tests) does not construct
     # the agents or need Google Cloud credentials.
@@ -92,6 +105,7 @@ def create_app(
     project_id: str | None = None,
     verifier: TokenVerifier | None = None,
     runner: Runner | None = None,
+    web_config: dict[str, str] | None = None,
 ) -> FastAPI:
     """Build the web app.
 
@@ -99,19 +113,31 @@ def create_app(
         project_id: The Firebase project to trust. Defaults to the environment.
         verifier: Token checker. Defaults to Google's; tests pass a fake.
         runner: The ADK runner. Defaults to the real Head Hunter agent.
+        web_config: Firebase settings for the login page. Defaults to the file.
 
     Raises:
         RuntimeError: ``HH_SINGLE_USER`` is set. It pins every session to one
             profile, which would make the verified id meaningless and hand
             everyone who signs in the same career.
-        ValueError: No Firebase project is configured.
+        ValueError: The login page signs
+            in against a different project than the server trusts. That mismatch
+            lets people sign in and then be refused on every request.
     """
     if config.single_user():
         raise RuntimeError(
             "HH_SINGLE_USER is set, so every user would share one profile. "
             "Unset it before running the signed-in server."
         )
-    project = project_id or config.firebase_project()
+    web_config = web_config if web_config is not None else _load_web_config()
+    project = project_id or config.firebase_project() or web_config.get("projectId")
+    if not project:
+        raise ValueError("No Firebase project: set HH_FIREBASE_PROJECT.")
+    if web_config.get("projectId") != project:
+        raise ValueError(
+            f"The login page signs in against {web_config.get('projectId')!r} but "
+            f"the server trusts {project!r}. Set HH_FIREBASE_PROJECT to match "
+            "head_hunter/web/firebase-config.json."
+        )
     check = verifier or google_verifier
     runner = runner or _build_runner()
     api = FastAPI(title="Head Hunter", docs_url=None, redoc_url=None)
@@ -127,6 +153,17 @@ def create_app(
                 detail=str(exc),
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
+
+    @api.get("/", include_in_schema=False)
+    def page() -> FileResponse:
+        return FileResponse(
+            WEB_DIR / "index.html",
+            headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"},
+        )
+
+    @api.get("/firebase-config.json", include_in_schema=False)
+    def firebase_config() -> JSONResponse:
+        return JSONResponse(web_config)
 
     @api.get("/healthz")
     def healthz() -> dict[str, str]:

@@ -20,6 +20,7 @@ from google.auth.exceptions import InvalidValue
 from head_hunter import auth, config, server
 
 PROJECT = "head-hunter-agent"
+WEB_CONFIG = {"projectId": PROJECT, "apiKey": "k", "authDomain": "a", "appId": "i"}
 
 
 def claims(**overrides: Any) -> dict[str, Any]:
@@ -94,7 +95,10 @@ def client(runner: FakeRunner) -> TestClient:
         "bob-token": claims(sub="bob-uid", email="bob@example.com", name="Bob"),
     }
     app = server.create_app(
-        project_id=PROJECT, verifier=fake_verifier(tokens), runner=runner
+        project_id=PROJECT,
+        verifier=fake_verifier(tokens),
+        runner=runner,
+        web_config=WEB_CONFIG,
     )
     return TestClient(app)
 
@@ -273,31 +277,66 @@ def test_the_server_will_not_start_with_everyone_pinned_to_one_profile(
 ) -> None:
     monkeypatch.setenv("HH_SINGLE_USER", "local")
     with pytest.raises(RuntimeError, match="HH_SINGLE_USER"):
-        server.create_app(project_id=PROJECT, runner=runner)
+        server.create_app(project_id=PROJECT, runner=runner, web_config=WEB_CONFIG)
 
 
-def test_the_server_will_not_start_without_a_project(
+def test_the_server_trusts_the_project_the_page_signs_in_against(
     monkeypatch: pytest.MonkeyPatch, runner: FakeRunner
 ) -> None:
     monkeypatch.delenv("HH_FIREBASE_PROJECT", raising=False)
-    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
-    with pytest.raises(ValueError, match="HH_FIREBASE_PROJECT"):
-        server.create_app(runner=runner)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "the-agents-own-project")
+
+    # Firebase may be a different project from the one hosting the agent, so the
+    # Cloud project must not be mistaken for it.
+    assert server.create_app(runner=runner, web_config=WEB_CONFIG) is not None
+    assert config.firebase_project() is None
 
 
-def test_the_firebase_project_falls_back_to_the_cloud_project(
-    monkeypatch: pytest.MonkeyPatch,
+def test_an_explicit_firebase_project_must_match_the_page(
+    monkeypatch: pytest.MonkeyPatch, runner: FakeRunner
 ) -> None:
-    monkeypatch.delenv("HH_FIREBASE_PROJECT", raising=False)
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "my-project")
-    assert config.firebase_project() == "my-project"
-    monkeypatch.setenv("HH_FIREBASE_PROJECT", "other")
-    assert config.firebase_project() == "other"
+    monkeypatch.setenv("HH_FIREBASE_PROJECT", "some-other-project")
+    with pytest.raises(ValueError, match="some-other-project"):
+        server.create_app(runner=runner, web_config=WEB_CONFIG)
 
 
 def test_the_real_agent_builds_behind_the_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The default wiring constructs, so a typo here fails in CI, not in prod."""
-    monkeypatch.setenv("HH_FIREBASE_PROJECT", PROJECT)
+    monkeypatch.delenv("HH_FIREBASE_PROJECT", raising=False)
     assert server.create_app() is not None
+
+
+# The login page ---------------------------------------------------------------
+
+
+def test_the_login_page_loads_without_signing_in(client: TestClient) -> None:
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Sign in with Google" in response.text
+    assert response.headers["x-frame-options"] == "DENY"
+
+
+def test_the_page_never_puts_agent_text_into_html(client: TestClient) -> None:
+    """Agent replies and pasted postings are untrusted; only textContent is safe."""
+    assert "innerHTML" not in client.get("/").text
+
+
+def test_the_page_is_given_its_firebase_settings(client: TestClient) -> None:
+    assert client.get("/firebase-config.json").json() == WEB_CONFIG
+
+
+def test_a_page_signing_into_another_project_is_caught_at_startup(
+    runner: FakeRunner,
+) -> None:
+    other = {**WEB_CONFIG, "projectId": "some-other-project"}
+    with pytest.raises(ValueError, match="some-other-project"):
+        server.create_app(project_id=PROJECT, runner=runner, web_config=other)
+
+
+def test_the_shipped_web_config_is_complete() -> None:
+    shipped = server._load_web_config()
+    assert {"apiKey", "authDomain", "projectId", "appId"} <= shipped.keys()
+    assert shipped["authDomain"] == f"{shipped['projectId']}.firebaseapp.com"

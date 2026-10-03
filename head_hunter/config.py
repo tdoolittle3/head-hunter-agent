@@ -73,21 +73,14 @@ def firestore_database() -> str:
     return os.environ.get("HH_FIRESTORE_DATABASE", "(default)")
 
 
-def firebase_project() -> str:
-    """Return the Firebase project whose sign-in tokens the server accepts.
+def firebase_project() -> str | None:
+    """Return the Firebase project the server must trust, if one is pinned.
 
-    ``HH_FIREBASE_PROJECT`` wins; otherwise the Google Cloud project, because
-    the plan is one project for both. A token minted for any other project is
-    refused, so this must name the project the front end signs in against.
-    Raises when neither is set: a server that cannot say who it trusts should
-    not start.
+    ``HH_FIREBASE_PROJECT`` overrides; otherwise the server uses the project the
+    login page signs in against (``head_hunter/web/firebase-config.json``). It
+    deliberately does not fall back to ``GOOGLE_CLOUD_PROJECT``: Firebase can be
+    a different project from the one that hosts the agent, and trusting the
+    wrong one refuses every sign-in.
     """
-    value = os.environ.get("HH_FIREBASE_PROJECT") or os.environ.get(
-        "GOOGLE_CLOUD_PROJECT"
-    )
-    if not value or not value.strip():
-        raise ValueError(
-            "Set HH_FIREBASE_PROJECT (or GOOGLE_CLOUD_PROJECT): the server needs "
-            "to know which Firebase project's sign-in tokens to accept."
-        )
-    return value.strip()
+    value = os.environ.get("HH_FIREBASE_PROJECT", "").strip()
+    return value or None
