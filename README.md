@@ -131,7 +131,7 @@ right-hand side directly:
 | Command | What it runs |
 |---|---|
 | `make dev` | `adk web head_hunter` — the chat UI |
-| `make serve` | the signed-in API server (`head_hunter/server.py`); every call needs a Firebase token |
+| `make serve` | the signed-in server: Google login page at `/` plus the API behind it (`head_hunter/server.py`) |
 | `make agents` | `adk web head_hunter/agents` — every agent listed separately, for testing one alone |
 | `make test` | `pytest` |
 | `make lint` | `ruff check .` and `ruff format --check .` |
@@ -205,8 +205,8 @@ Production stays manual — run the Deploy workflow by hand and choose `prod`.
 2. **Auth** — half done. Tools read the user id from the ADK session, so two
    ids get two separate profiles in Firestore, and `head_hunter/server.py`
    verifies a Firebase (Google sign-in) token and runs the agent as the verified
-   user. Still to come: the login page, and deploying that server instead of
-   `adk web`, which has no login and gives every browser the same id. Until
+   user, and serves the Google login page. Still to come: deploying that
+   server instead of `adk web`, which has no login and gives every browser the same id. Until
    then keep the deployed service private and `HH_SINGLE_USER` set.
 3. **A real lock on the profile** — the stale-write guard compares `updated_at`
    timestamps, which cannot tell apart two writes inside one clock tick. Fine
