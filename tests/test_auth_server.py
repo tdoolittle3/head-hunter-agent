@@ -18,6 +18,7 @@ from google.adk.sessions import InMemorySessionService
 from google.auth.exceptions import InvalidValue
 
 from head_hunter import auth, config, server
+from head_hunter.ratelimit import RateLimiter
 
 PROJECT = "head-hunter-agent"
 WEB_CONFIG = {"projectId": PROJECT, "apiKey": "k", "authDomain": "a", "appId": "i"}
@@ -340,3 +341,82 @@ def test_the_shipped_web_config_is_complete() -> None:
     shipped = server._load_web_config()
     assert {"apiKey", "authDomain", "projectId", "appId"} <= shipped.keys()
     assert shipped["authDomain"] == f"{shipped['projectId']}.firebaseapp.com"
+
+
+# Cost protection and persistence ------------------------------------------
+
+
+def limited_client(runner: FakeRunner, limit: int) -> TestClient:
+    tokens = {
+        "alice-token": claims(),
+        "bob-token": claims(sub="bob-uid", email="bob@example.com", name="Bob"),
+    }
+    app = server.create_app(
+        project_id=PROJECT,
+        verifier=fake_verifier(tokens),
+        runner=runner,
+        web_config=WEB_CONFIG,
+        limiter=RateLimiter([(limit, 60)]),
+    )
+    return TestClient(app)
+
+
+def test_a_user_over_the_limit_gets_a_429_and_the_agent_is_not_run(
+    runner: FakeRunner,
+) -> None:
+    client = limited_client(runner, limit=2)
+    for _ in range(2):
+        ok = client.post(
+            "/api/chat", json={"message": "hi"}, headers=bearer("alice-token")
+        )
+        assert ok.status_code == 200
+
+    over = client.post(
+        "/api/chat", json={"message": "hi"}, headers=bearer("alice-token")
+    )
+
+    assert over.status_code == 429
+    assert int(over.headers["retry-after"]) >= 1
+    assert len(runner.calls) == 2
+
+
+def test_one_users_limit_does_not_use_up_anothers(runner: FakeRunner) -> None:
+    client = limited_client(runner, limit=1)
+    client.post("/api/chat", json={"message": "hi"}, headers=bearer("alice-token"))
+
+    bob = client.post("/api/chat", json={"message": "hi"}, headers=bearer("bob-token"))
+    assert bob.status_code == 200
+
+
+def test_an_anonymous_flood_is_refused_before_it_is_counted(
+    runner: FakeRunner,
+) -> None:
+    client = limited_client(runner, limit=1)
+    for _ in range(5):
+        assert client.post("/api/chat", json={"message": "x"}).status_code == 401
+
+    ok = client.post("/api/chat", json={"message": "hi"}, headers=bearer("alice-token"))
+    assert ok.status_code == 200
+
+
+def test_firestore_storage_keeps_conversations_in_firestore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from google.adk.integrations.firestore.firestore_session_service import (
+        FirestoreSessionService,
+    )
+    from google.cloud import firestore
+
+    monkeypatch.setenv("HH_STORAGE", "firestore")
+    monkeypatch.setattr(firestore, "AsyncClient", MagicMock())
+
+    assert isinstance(server._build_session_service(), FirestoreSessionService)
+
+
+def test_json_storage_keeps_conversations_in_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HH_STORAGE", "json")
+    assert isinstance(server._build_session_service(), InMemorySessionService)

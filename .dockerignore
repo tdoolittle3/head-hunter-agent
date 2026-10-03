@@ -1,0 +1,17 @@
+# Keep the image to what runs. In particular, never ship .env or local data.
+.git
+.github
+.claude
+.venv
+.env
+.env.*
+!.env.example
+data
+tests
+docs
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+*.md
+Makefile

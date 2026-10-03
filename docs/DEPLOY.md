@@ -1,11 +1,15 @@
 # Deploying
 
 Two ways in: by hand from a checkout, or automatically from GitHub Actions on a
-push to `main`. Both end at the same place — a **private** Cloud Run service you
-reach through an authenticated tunnel.
+push to `main`. Both build the `Dockerfile` and run it on Cloud Run.
 
-Read the warning in `README.md` first: the deployed agent forgets everything on
-restart. This is a smoke test until Firestore lands in Phase 3.
+What runs there is the **signed-in server** (`head_hunter/server.py`), not the
+`adk web` dev UI. The service is **public**: anyone can load the page, but every
+API route needs a verified Google sign-in token, and the agent runs as the person
+in that token. Their profile, jobs, resumes and conversations live in Firestore
+under their own user id, so they survive restarts and instance changes.
+
+`adk web` has no login and is never deployed. Use it locally with `make dev`.
 
 ## One-time project setup
 
@@ -62,6 +66,18 @@ gcloud projects add-iam-policy-binding head-hunter-agent \
   --role="roles/aiplatform.user"
 ```
 
+### 5. Let the sign-in page work on the Cloud Run hostname
+
+Firebase refuses to sign people in from a hostname it does not know. After the
+first deploy, copy the service URL's host (the workflow prints it in its
+summary) and add it, **without `https://` and with no wildcard**, under
+**Authentication > Settings > Authorized domains** in the Firebase project
+named in `head_hunter/web/firebase-config.json`.
+
+That is a different Google Cloud project from the one hosting Cloud Run if you
+created Firebase separately, so check the project picker before adding it.
+Sign-in fails with `auth/unauthorized-domain` until this is done.
+
 ## Deploying by hand
 
 ```bash
@@ -70,14 +86,8 @@ make deploy-test TEST_PROJECT=head-hunter-agent
 
 ### On Windows
 
-`make` is usually absent and `adk` is often not on `PATH` even when `google-adk`
-is installed. Both have workarounds — but there is a trap between them.
-
-Run the deploy from **PowerShell**, not Git Bash:
-
-```powershell
-python -m google.adk.cli deploy cloud_run --project=head-hunter-agent --region=us-central1 --service_name=head-hunter-test --with_ui --env GOOGLE_GENAI_USE_VERTEXAI=TRUE --env HH_SINGLE_USER=local --env HH_DATA_DIR=/tmp/head-hunter-data head_hunter -- --no-allow-unauthenticated
-```
+`make` is usually absent. Run the command it would run — `make -n deploy-test
+TEST_PROJECT=...` prints it — from **PowerShell**, not Git Bash.
 
 Git Bash rewrites any argument that looks like a Unix path into a Windows one
 before the program sees it, so `HH_DATA_DIR=/tmp/head-hunter-data` silently
@@ -159,99 +169,62 @@ Set `HH_MODEL` as a variable too if your project does not serve the default
 model. Leave it unset otherwise — the workflow passes an empty `MODEL`, which
 the Makefile ignores.
 
-## Reaching a deployed service
+## Using a deployed service
 
-Both services deploy with `--no-allow-unauthenticated`, so there is no URL you
-can simply open.
-
-```bash
-make proxy-test TEST_PROJECT=head-hunter-agent
-```
-
-That serves the ADK web UI on `http://localhost:8080`, authenticated as you.
-gcloud may install the `cloud-run-proxy` component the first time.
-
-### If the UI is a blank page
-
-Your browser's origin is not matched by `ALLOWED_ORIGINS`. The default is one
-`regex:` pattern covering both supported routes — `http://localhost:8080` for
-the proxy on a laptop, and Cloud Shell Web Preview, whose host carries a
-per-session id and cannot be written out literally.
-
-The dev UI is an Angular app loaded as ES modules, and module scripts are always
-fetched in CORS mode, so they carry an `Origin` header even same-origin. ADK
-answers every one with `403 Forbidden: origin not allowed` and no script ever
-runs. Stylesheets are not fetched in CORS mode, so the CSS loads and you get a
-styled blank page rather than an obvious error.
-
-To confirm that is what you are hitting, ask for a script with an `Origin`
-header. A `403` means the origin is missing from the list:
+Open the service URL, click **Sign in with Google**, and chat. Nothing to
+install and no tunnel. Different Google accounts get different profiles.
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -H "Origin: $YOUR_ORIGIN" "$YOUR_URL/dev-ui/"
+gcloud run services describe head-hunter-test --project=head-hunter-agent   --region=us-central1 --format='value(status.url)'
 ```
 
-Reaching it from somewhere else again — a different port, a tunnel — means
-extending the pattern. It has to stay a **single** value:
+The workflow smoke-tests every deploy: `/healthz` must answer, and chat with no
+token, or a forged one, must be refused with a `401`. If either check fails the
+deploy is marked failed. Run the same check by hand any time:
 
 ```bash
-make deploy-test TEST_PROJECT=head-hunter-agent \
-  ALLOWED_ORIGINS='regex:(?:http://localhost:8080|https://my-tunnel\.example)'
+URL=https://your-service-url
+curl -s -o /dev/null -w "%{http_code}
+" -X POST -H 'Content-Type: application/json'   -d '{"message":"hi"}' "$URL/api/chat"    # must print 401
 ```
 
-Do not pass `--allow_origins` twice. `adk deploy cloud_run` joins repeated
-values with a comma into one flag and the server never splits it back apart, so
-the container allows a single nonsense origin and refuses every real one — the
-same blank page, with the added charm that the origin you had working before
-stops working too.
+## Cost protection
 
-Widening this does not widen access. The service stays private and IAM decides
-who may call it; the origin list only decides whose browser can render the UI.
+The service is public and every message is a paid Gemini call, so three limits
+stand between a bad actor and your bill:
 
-For a scripted check, call the API with an identity token instead:
+- **Per-user limits** in the app: 10 messages a minute and 200 a day by default
+  (`HH_RATE_PER_MINUTE`, `HH_RATE_PER_DAY`). They are counted per instance, so
+  the real ceiling is the limit times `--max-instances`.
+- **`--max-instances`**, 3 by default (`make deploy-test MAX_INSTANCES=5`). This
+  bounds how much traffic can ever be processed at once.
+- **Sign-in required.** Anonymous callers are refused before any model call.
+
+Be aware that **anyone with a Google account can sign in**. There is no allow-list
+yet, so the limits above are the only brake on a determined person with many
+accounts. Set a budget alert on the billing account too:
+**Billing > Budgets & alerts**.
+
+## Turning it off in an emergency
+
+Public access is one IAM binding. Remove it and the service is private again
+within seconds; nothing is lost:
 
 ```bash
-curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
-  "$(gcloud run services describe head-hunter-test --project=head-hunter-agent --region=us-central1 --format='value(status.url)')/list-apps"
+gcloud run services remove-iam-policy-binding head-hunter-test   --project=head-hunter-agent --region=us-central1   --member=allUsers --role=roles/run.invoker
 ```
 
-## Giving a collaborator access
+The next `make deploy-test` puts it back.
 
-Grant the invoker role — do not make the service public:
+## Debugging a deployed service
 
-```bash
-gcloud run services add-iam-policy-binding head-hunter-test \
-  --project=head-hunter-agent --region=us-central1 \
-  --member="user:them@example.com" --role="roles/run.invoker"
-```
-
-Then send them this, which needs nothing installed:
-
-> 1. Open <https://shell.cloud.google.com> and sign in with the Google account
->    you were granted access on.
-> 2. Paste this and press Enter:
->
->    ```
->    gcloud run services proxy head-hunter-test --project=head-hunter-agent --region=us-central1
->    ```
->
->    Say yes if it offers to install a component. Leave it running — it will sit
->    there printing nothing, which is correct.
-> 3. Click **Web Preview** (the eye icon, top right of the Cloud Shell toolbar)
->    and choose **Preview on port 8080**.
-> 4. A new tab opens with the chat UI. Pick `head_hunter` from the dropdown at
->    the top and start typing.
->
-> If the page is blank, tell me the port — Web Preview sometimes picks 8081 and
-> the address has to be allowed before it will load.
-
-Two things they should know before they spend real effort in it:
-
-- **Nothing is saved.** Cloud Run wipes the container's disk on restart and
-  sessions are held in memory, so a profile can vanish between visits. Until
-  Firestore lands (Phase 3) this is for trying the agent, not for building a
-  real career profile.
-- **You share one profile.** `HH_SINGLE_USER` is set to `local`, so everyone who
-  reaches the service reads and writes the same record — and because each Cloud
-  Run instance has its own disk, two people can even see different versions of
-  it at the same time.
+- **Page loads, sign-in popup fails with `auth/unauthorized-domain`** — step 5 above.
+- **Sign-in works, every chat says "Your sign-in was not accepted"** — the server
+  trusts a different Firebase project than the page signs in against. The server
+  checks this on startup, so look at the revision logs; it will have refused to
+  start. A deploy that cannot start never takes traffic.
+- **Revision fails to start with `HH_SINGLE_USER is set`** — a leftover pin. The
+  deploy replaces the service's whole environment, so this means it was set in
+  the command or workflow variables. Remove it there.
+- **403 from Vertex in the logs** — the runtime service account needs
+  `roles/aiplatform.user` (step 4).

@@ -1,5 +1,5 @@
 .PHONY: help install dev serve agents test lint format check eval \
-        enable-apis deploy-test deploy-prod proxy-test proxy-prod
+        enable-apis deploy-test deploy-prod
 
 # --- Deploy settings. Override on the command line, e.g.
 # ---   make deploy-test TEST_PROJECT=my-test-project
@@ -12,48 +12,28 @@ PROD_SERVICE ?= head-hunter
 # Only set this if your project does not serve the default model.
 MODEL ?=
 
-# Which browser origins may load the dev UI.
+# Cloud Run runs the signed-in server in the Dockerfile, not `adk web`.
 #
-# Two landmines in `adk deploy cloud_run`, both of which produce a container
-# that refuses every origin, so read before editing:
+# --set-env-vars REPLACES the service's whole environment; --update-env-vars
+# would merge into it. That is deliberate: the old `adk web` deployment carried
+# HH_SINGLE_USER, which pins everybody to one profile, and the server refuses to
+# start if it is still there. Replacing the set guarantees it is gone.
 #
-#  1. It joins repeated --allow_origins with a comma into ONE flag, and the
-#     server never splits it back apart. Passing the flag twice allows a single
-#     nonsense origin instead of two real ones. Hence one value, not a list --
-#     a `regex:` pattern with alternation is the only way to allow two places.
-#  2. It interpolates the value verbatim and UNQUOTED into a shell-form CMD in
-#     the generated Dockerfile. A pattern containing ( ) or | is then read as
-#     shell syntax and the container dies with a syntax error before it starts.
+# The service is public (--allow-unauthenticated) because the app, not Cloud Run
+# IAM, decides who is in: every API route needs a verified Firebase token. That is
+# only safe with the signed-in server, which is why it is never combined with
+# `adk web`. The deploy workflow smoke-tests that anonymous chat is refused.
 #
-# The doubled quoting below is deliberate, not a typo: the outer "..." is eaten
-# by this recipe's shell, so adk receives a value that still carries the single
-# quotes, and the Dockerfile ends up with --allow_origins='regex:...' -- quoted,
-# and safe for the CMD shell to hand to ADK intact.
-#
-# The default covers both ways in: `gcloud run services proxy` on a laptop
-# (localhost:8080) and Cloud Shell Web Preview, whose host carries a per-session
-# id and so can only be matched by pattern. The pattern is full-matched against
-# the whole origin, so it does not match lookalikes like cloudshell.dev.evil.com.
-#
-# The dev UI is an Angular app loaded as ES modules, and module scripts are
-# always fetched in CORS mode -- they carry an Origin header even same-origin.
-# Miss an origin here and ADK answers every script with "403 Forbidden: origin
-# not allowed", so the page renders as a blank shell. Stylesheets are not
-# fetched in CORS mode and load fine, which makes it look stranger than it is.
-#
-# This is not the access control. The service is private and IAM decides who
-# gets in; this list only decides whose browser can render the UI.
-ALLOWED_ORIGINS ?= regex:(?:http://localhost:8080|https://.*\.cloudshell\.dev)
+# --max-instances bounds the worst-case Gemini bill and multiplies the per-user
+# limits in head_hunter/ratelimit.py; raise it deliberately, not casually.
+MAX_INSTANCES ?= 3
+RUN_FLAGS = --allow-unauthenticated             --max-instances=$(MAX_INSTANCES)             --concurrency=20             --memory=1Gi
 
-# Deployments store in Firestore, because a Cloud Run filesystem is
-# per-instance and wiped on every restart. HH_DATA_DIR still points somewhere
-# writable: the container runs as a non-root user in a root-owned /app, so if
-# anything ever falls back to the JSON store it must not try to write ./data.
-DEPLOY_ENV = --env GOOGLE_GENAI_USE_VERTEXAI=TRUE \
-             --env HH_SINGLE_USER=local \
-             --env HH_STORAGE=firestore \
-             --env HH_DATA_DIR=/tmp/head-hunter-data \
-             $(if $(MODEL),--env HH_MODEL=$(MODEL),)
+# $(1) is the project. HH_DATA_DIR still points somewhere writable in case
+# anything ever falls back to the JSON store: the container runs as a non-root
+# user, and /app is root-owned.
+run_env = GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$(1),GOOGLE_CLOUD_LOCATION=$(REGION),HH_STORAGE=firestore,HH_DATA_DIR=/tmp/head-hunter-data$(if $(MODEL),$(comma)HH_MODEL=$(MODEL),)
+comma := ,
 
 help:  ## Show this help
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -97,28 +77,10 @@ enable-apis:  ## Turn on the Google Cloud APIs a deploy needs (once per project)
 	gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
 	  aiplatform.googleapis.com artifactregistry.googleapis.com --project=$(PROJECT)
 
-deploy-test:  ## Deploy to the test Cloud Run service (private)
+deploy-test:  ## Deploy the signed-in server to the test Cloud Run service (public; app-level login)
 	@test -n "$(TEST_PROJECT)" || { echo "Usage: make deploy-test TEST_PROJECT=your-test-project-id"; exit 1; }
-	adk deploy cloud_run \
-	  --project=$(TEST_PROJECT) --region=$(REGION) \
-	  --service_name=$(TEST_SERVICE) --with_ui \
-	  --allow_origins="'$(ALLOWED_ORIGINS)'" \
-	  $(DEPLOY_ENV) \
-	  head_hunter -- --no-allow-unauthenticated
+	gcloud run deploy $(TEST_SERVICE) --source . 	  --project=$(TEST_PROJECT) --region=$(REGION) 	  --set-env-vars="$(call run_env,$(TEST_PROJECT))" 	  $(RUN_FLAGS)
 
-deploy-prod:  ## Deploy to the production Cloud Run service (private). See README first.
+deploy-prod:  ## Deploy the signed-in server to the production Cloud Run service. See README first.
 	@test -n "$(PROD_PROJECT)" || { echo "Usage: make deploy-prod PROD_PROJECT=your-prod-project-id"; exit 1; }
-	adk deploy cloud_run \
-	  --project=$(PROD_PROJECT) --region=$(REGION) \
-	  --service_name=$(PROD_SERVICE) --with_ui \
-	  --allow_origins="'$(ALLOWED_ORIGINS)'" \
-	  $(DEPLOY_ENV) \
-	  head_hunter -- --no-allow-unauthenticated --min-instances=1
-
-proxy-test:  ## Open an authenticated tunnel to the test service on localhost:8080
-	@test -n "$(TEST_PROJECT)" || { echo "Usage: make proxy-test TEST_PROJECT=your-test-project-id"; exit 1; }
-	gcloud run services proxy $(TEST_SERVICE) --project=$(TEST_PROJECT) --region=$(REGION)
-
-proxy-prod:  ## Open an authenticated tunnel to the production service on localhost:8080
-	@test -n "$(PROD_PROJECT)" || { echo "Usage: make proxy-prod PROD_PROJECT=your-prod-project-id"; exit 1; }
-	gcloud run services proxy $(PROD_SERVICE) --project=$(PROD_PROJECT) --region=$(REGION)
+	gcloud run deploy $(PROD_SERVICE) --source . 	  --project=$(PROD_PROJECT) --region=$(REGION) 	  --set-env-vars="$(call run_env,$(PROD_PROJECT))" 	  $(RUN_FLAGS) --min-instances=1
