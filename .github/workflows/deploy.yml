@@ -2,6 +2,9 @@ name: Deploy
 
 # Pushes to main deploy to the *test* service. Production is deliberately
 # manual: run this workflow by hand and pick "prod". See docs/DEPLOY.md.
+#
+# The deployed service is public; the smoke test below is what proves the
+# sign-in check is actually in front of it.
 
 on:
   push:
@@ -72,7 +75,7 @@ jobs:
             make deploy-test TEST_PROJECT="$PROJECT" REGION="$REGION" MODEL="$MODEL"
           fi
 
-      - name: Report the service URL
+      - name: Smoke test the live service
         env:
           TARGET: ${{ inputs.target || 'test' }}
           PROJECT: ${{ vars.GCP_PROJECT_ID }}
@@ -80,16 +83,35 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$TARGET" = "prod" ]; then SERVICE=head-hunter; else SERVICE=head-hunter-test; fi
-          URL=$(gcloud run services describe "$SERVICE" \
-            --project="$PROJECT" --region="$REGION" --format='value(status.url)')
+          URL=$(gcloud run services describe "$SERVICE"             --project="$PROJECT" --region="$REGION" --format='value(status.url)')
+          { echo "SERVICE_URL=$URL"; echo "SERVICE_NAME=$SERVICE"; } >> "$GITHUB_ENV"
+
+          # The service is public, so the only thing between the internet and
+          # the agent is the sign-in check. Prove it is on: this must fail the
+          # deploy if anonymous chat is ever accepted.
+          curl -fsS "$URL/healthz"
+          echo
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST             -H 'Content-Type: application/json' -d '{"message":"hi"}' "$URL/api/chat")
+          if [ "$code" != "401" ]; then
+            echo "Anonymous chat returned $code, expected 401. Not safe to leave public." >&2
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST             -H 'Content-Type: application/json' -H 'Authorization: Bearer forged.token.value'             -d '{"message":"hi"}' "$URL/api/chat")
+          if [ "$code" != "401" ]; then
+            echo "A forged token returned $code, expected 401." >&2
+            exit 1
+          fi
+
+      - name: Report the service URL
+        run: |
           {
-            echo "### Deployed \`$SERVICE\`"
+            echo "### Deployed \`$SERVICE_NAME\`"
             echo
-            echo "URL: $URL"
+            echo "URL: $SERVICE_URL"
             echo
-            echo "The service is private. Reach it with:"
+            echo "Public, with Google sign-in. Anonymous chat was refused (401) in the smoke test."
             echo
-            echo '```bash'
-            echo "gcloud run services proxy $SERVICE --project=$PROJECT --region=$REGION"
-            echo '```'
+            echo "Sign-in only works from a hostname listed under Firebase"
+            echo "Authentication > Settings > Authorized domains. If this URL's host is not"
+            echo "there yet, add it: \`${SERVICE_URL#https://}\`"
           } >> "$GITHUB_STEP_SUMMARY"

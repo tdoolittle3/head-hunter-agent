@@ -84,3 +84,28 @@ def firebase_project() -> str | None:
     """
     value = os.environ.get("HH_FIREBASE_PROJECT", "").strip()
     return value or None
+
+
+def rate_limits() -> list[tuple[int, float]]:
+    """Return the per-user message limits as ``(count, window_seconds)`` pairs.
+
+    ``HH_RATE_PER_MINUTE`` and ``HH_RATE_PER_DAY`` cap how many messages one
+    signed-in user can send. Every message is a paid Gemini call on a public
+    endpoint, so there is no way to switch the limits off, only to move them.
+    """
+    limits = []
+    for name, default, window in (
+        ("HH_RATE_PER_MINUTE", 10, 60.0),
+        ("HH_RATE_PER_DAY", 200, 86_400.0),
+    ):
+        raw = os.environ.get(name, "").strip() or str(default)
+        try:
+            count = int(raw)
+        except ValueError:
+            count = 0
+        if count < 1:
+            raise ValueError(
+                f"{name} must be a whole number of 1 or more, not {raw!r}."
+            )
+        limits.append((count, window))
+    return limits

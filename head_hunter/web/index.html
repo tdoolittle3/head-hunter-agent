@@ -137,7 +137,7 @@
     }
     if (res.status === 404) {
       sessionId = null;
-      throw new Error("That conversation is gone (the server restarted). Send your message again to start a new one.");
+      throw new Error("That conversation could not be found. Send your message again to start a new one.");
     }
     if (!res.ok) {
       let detail = "Something went wrong. Try again.";

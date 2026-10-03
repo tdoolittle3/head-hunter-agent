@@ -23,7 +23,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +35,7 @@ from head_hunter.auth import (
     google_verifier,
     verify_user,
 )
+from head_hunter.ratelimit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -81,12 +82,32 @@ def _load_web_config() -> dict[str, str]:
     return json.loads((WEB_DIR / "firebase-config.json").read_text(encoding="utf-8"))
 
 
+def _build_session_service() -> BaseSessionService:
+    """Keep conversations where the profile is kept.
+
+    With Firestore storage, chat history survives a restart and is visible to
+    every Cloud Run instance, so a conversation does not vanish when traffic
+    lands on a different one. Sessions are filed under the user id, which is the
+    same verified id the profile uses.
+    """
+    if config.storage_backend() != "firestore":
+        return InMemorySessionService()
+    # Imported here so a laptop running the JSON backend never needs Firestore.
+    from google.adk.integrations.firestore.firestore_session_service import (
+        FirestoreSessionService,
+    )
+    from google.cloud import firestore
+
+    client = firestore.AsyncClient(database=config.firestore_database())
+    return FirestoreSessionService(client=client)
+
+
 def _build_runner() -> Runner:
     # Imported here so importing this module (and its tests) does not construct
     # the agents or need Google Cloud credentials.
     from head_hunter.agent import app as agent_app
 
-    return Runner(app=agent_app, session_service=InMemorySessionService())
+    return Runner(app=agent_app, session_service=_build_session_service())
 
 
 def _final_replies(events: list[Any]) -> list[Reply]:
@@ -106,6 +127,7 @@ def create_app(
     verifier: TokenVerifier | None = None,
     runner: Runner | None = None,
     web_config: dict[str, str] | None = None,
+    limiter: RateLimiter | None = None,
 ) -> FastAPI:
     """Build the web app.
 
@@ -114,6 +136,7 @@ def create_app(
         verifier: Token checker. Defaults to Google's; tests pass a fake.
         runner: The ADK runner. Defaults to the real Head Hunter agent.
         web_config: Firebase settings for the login page. Defaults to the file.
+        limiter: Per-user message limits. Defaults to the environment's.
 
     Raises:
         RuntimeError: ``HH_SINGLE_USER`` is set. It pins every session to one
@@ -139,6 +162,7 @@ def create_app(
             "head_hunter/web/firebase-config.json."
         )
     check = verifier or google_verifier
+    limiter = limiter or RateLimiter(config.rate_limits())
     runner = runner or _build_runner()
     api = FastAPI(title="Head Hunter", docs_url=None, redoc_url=None)
 
@@ -179,6 +203,15 @@ def create_app(
     async def chat(
         body: ChatRequest, user: Annotated[VerifiedUser, Depends(current_user)]
     ) -> ChatResponse:
+        wait = limiter.check(user.uid)
+        if wait > 0:
+            seconds = max(1, round(wait))
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many messages. Try again in {seconds}s.",
+                headers={"Retry-After": str(seconds)},
+            )
+
         sessions = runner.session_service
         if body.session_id is None:
             session = await sessions.create_session(app_name=APP_NAME, user_id=user.uid)

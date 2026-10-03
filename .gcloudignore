@@ -1,0 +1,10 @@
+# What `gcloud run deploy --source .` uploads to Cloud Build.
+# Everything .gitignore excludes stays out, which is what keeps .env and the
+# local data/ folder off Google's servers. Do not remove this include.
+#!include:.gitignore
+.git
+.claude
+.env
+.env.*
+!.env.example
+data/

@@ -138,23 +138,26 @@ right-hand side directly:
 | `make format` | `ruff format .` and `ruff check --fix .` |
 | `make check` | lint then test; must pass before opening a PR |
 | `make eval` | run the ADK eval set (needs `pip install "google-adk[eval]"`) |
-| `make deploy-test` | deploy to the test Cloud Run service |
-| `make proxy-test` | open an authenticated tunnel to it |
+| `make deploy-test` | deploy the signed-in server to the test Cloud Run service |
 
 ## Deploying
 
-> **Read this first.** Deployments store in **Firestore**, so the profile,
-> jobs, fit reports and resumes now survive a restart — the deployed agent
-> keeps your career profile for real. What does *not* survive is the
-> **conversation**: sessions are still held in memory, so reopening the chat
-> starts a fresh thread against the same stored profile.
+> **Read this first.** What runs on Cloud Run is the **signed-in server**
+> (`head_hunter/server.py`), and the service is **public**: anyone can open the
+> page, but every API call needs a verified Google sign-in and runs as that
+> person. Each person's profile, jobs, resumes and conversations are stored in
+> Firestore under their own id, so they survive restarts.
+>
+> Anyone with a Google account can sign in, so cost is held down by per-user
+> message limits and a cap on instances. Read "Cost protection" in
+> [`docs/DEPLOY.md`](docs/DEPLOY.md) and set a billing alert before deploying.
 >
 > A local checkout still defaults to the JSON store under `data/`, which needs
-> no Google Cloud project. `HH_STORAGE` picks between them.
+> no Google Cloud project, and `make dev` still runs the login-free `adk web`
+> for you alone. `HH_STORAGE` picks the store.
 
-`adk deploy` generates the Dockerfile; there is nothing to write. It copies only
-the `head_hunter/` folder, which is why `head_hunter/requirements.txt` exists
-separately from the one at the repo root — a test keeps the two in sync.
+The `Dockerfile` builds the server image. `head_hunter/requirements.txt` lists
+its dependencies, and a test keeps it in sync with the one at the repo root.
 
 Once per project:
 
@@ -162,9 +165,11 @@ Once per project:
 make enable-apis PROJECT=your-project-id
 ```
 
-That enables the APIs but not the IAM a source deploy needs — see
-[`docs/DEPLOY.md`](docs/DEPLOY.md) for the two role grants, the GitHub Actions
-setup, and the Git Bash trap that corrupts `HH_DATA_DIR` on Windows.
+That enables the APIs but not the IAM a source deploy needs, and the Firebase
+sign-in domain has to be added after the first deploy. See
+[`docs/DEPLOY.md`](docs/DEPLOY.md) for the role grants, the Firebase step, the
+GitHub Actions setup, and the Git Bash trap that corrupts `HH_DATA_DIR` on
+Windows.
 
 Then deploy:
 
@@ -172,14 +177,7 @@ Then deploy:
 make deploy-test TEST_PROJECT=your-test-project-id
 ```
 
-The service is deployed **private** (`--no-allow-unauthenticated`). Reach it
-through an authenticated tunnel rather than opening it to the internet:
-
-```bash
-make proxy-test TEST_PROJECT=your-test-project-id
-```
-
-That serves it on `localhost:8080`. Production is the same shape:
+Open the URL it prints and sign in with Google. Production is the same shape:
 
 ```bash
 make deploy-prod PROD_PROJECT=your-prod-project-id
@@ -192,36 +190,36 @@ should not be able to take down anything you depend on.
 If your project does not serve the default model, pass it through:
 `make deploy-test TEST_PROJECT=... MODEL=gemini-2.5-pro`.
 
-A push to `main` deploys to the test service automatically via GitHub Actions.
-Production stays manual — run the Deploy workflow by hand and choose `prod`.
+A push to `main` deploys to the test service automatically via GitHub Actions,
+then checks that the live service refuses anonymous chat. Production stays
+manual — run the Deploy workflow by hand and choose `prod`.
 
 ### What is still missing before this is really "production"
 
-1. **A persistent session service** — the stored records survive a restart now,
-   but chat history does not. ADK 2.9.1 ships a `FirestoreSessionService`, and
-   there is no URI scheme registered for it (`memory`, `agentengine`, `sqlite`,
-   `postgresql`, `mysql` only) and `App` takes no session service, so wiring it
-   up means registering a custom scheme or running Cloud SQL.
-2. **Auth** — half done. Tools read the user id from the ADK session, so two
-   ids get two separate profiles in Firestore, and `head_hunter/server.py`
-   verifies a Firebase (Google sign-in) token and runs the agent as the verified
-   user, and serves the Google login page. Still to come: deploying that
-   server instead of `adk web`, which has no login and gives every browser the same id. Until
-   then keep the deployed service private and `HH_SINGLE_USER` set.
+1. **An allow-list or sign-up control** — any Google account can sign in. The
+   rate limits and instance cap bound the damage; they do not decide who gets in.
+2. **A shared rate limit** — limits are counted per instance, so the real ceiling
+   is the limit times `--max-instances`.
 3. **A real lock on the profile** — the stale-write guard compares `updated_at`
    timestamps, which cannot tell apart two writes inside one clock tick. Fine
-   for one user; replace it with a version counter or a Firestore transaction
-   before concurrent writers are real.
+   for one user at a time; replace it with a version counter or a Firestore
+   transaction before one person can write from two places at once.
+4. **Resume download from the page** — the DOCX is written, but the page has no
+   download button yet.
 
 ## Project layout
 
 ```
 head_hunter/
   agent.py       entry point adk web loads; wraps the coordinator in an App
+  server.py      the signed-in web server (Google login + chat API) deployed to Cloud Run
+  auth.py        checks a Firebase sign-in token: who is calling
+  ratelimit.py   per-user message limits (cost guard)
+  web/           the login/chat page and its public Firebase settings
   agents/        one folder per agent: agent.py + prompt.md
                  head_hunter (coordinator), interviewer, intake, fit_analyst,
                  resume_tailor
-  requirements.txt  container-only deps (adk deploy copies just this folder)
+  requirements.txt  container deps, installed by the Dockerfile
   schemas/       Pydantic models: Profile, JobPosting, FitReport, Resume, JournalEntry
   storage/       repository interface + JSON (Phase 1) and Firestore (Phase 3) backends
   tools/         functions agents can call, grouped per agent
