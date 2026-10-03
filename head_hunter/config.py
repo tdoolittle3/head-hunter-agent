@@ -71,3 +71,23 @@ def firestore_database() -> str:
     what ``gcloud firestore databases create`` makes unless told otherwise.
     """
     return os.environ.get("HH_FIRESTORE_DATABASE", "(default)")
+
+
+def firebase_project() -> str:
+    """Return the Firebase project whose sign-in tokens the server accepts.
+
+    ``HH_FIREBASE_PROJECT`` wins; otherwise the Google Cloud project, because
+    the plan is one project for both. A token minted for any other project is
+    refused, so this must name the project the front end signs in against.
+    Raises when neither is set: a server that cannot say who it trusts should
+    not start.
+    """
+    value = os.environ.get("HH_FIREBASE_PROJECT") or os.environ.get(
+        "GOOGLE_CLOUD_PROJECT"
+    )
+    if not value or not value.strip():
+        raise ValueError(
+            "Set HH_FIREBASE_PROJECT (or GOOGLE_CLOUD_PROJECT): the server needs "
+            "to know which Firebase project's sign-in tokens to accept."
+        )
+    return value.strip()

@@ -1,4 +1,4 @@
-.PHONY: help install dev agents test lint format check eval \
+.PHONY: help install dev serve agents test lint format check eval \
         enable-apis deploy-test deploy-prod proxy-test proxy-prod
 
 # --- Deploy settings. Override on the command line, e.g.
@@ -63,6 +63,9 @@ install:  ## Install dependencies
 
 dev:  ## Start the web chat UI on port 8000
 	adk web head_hunter
+
+serve:  ## Start the signed-in API server on port 8080 (needs HH_SINGLE_USER unset)
+	python -m uvicorn head_hunter.server:create_app --factory --port 8080
 
 agents:  ## Start the web UI with every agent listed separately (for testing one alone)
 	adk web head_hunter/agents
