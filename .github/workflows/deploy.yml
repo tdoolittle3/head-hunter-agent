@@ -89,7 +89,7 @@ jobs:
           # The service is public, so the only thing between the internet and
           # the agent is the sign-in check. Prove it is on: this must fail the
           # deploy if anonymous chat is ever accepted.
-          curl -fsS "$URL/healthz"
+          curl -fsS "$URL/api/health"
           echo
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST             -H 'Content-Type: application/json' -d '{"message":"hi"}' "$URL/api/chat")
           if [ "$code" != "401" ]; then
