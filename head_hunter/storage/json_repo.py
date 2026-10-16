@@ -35,10 +35,16 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from head_hunter import config
-from head_hunter.schemas import FitReport, JobPosting, Profile, Resume
+from head_hunter.schemas import (
+    FitReport,
+    JobPosting,
+    Profile,
+    Resume,
+    UploadedDocument,
+)
 from head_hunter.storage.repository import Repository
 
-_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume)
+_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume, UploadedDocument)
 
 _UNSAFE_ID_PARTS = ("/", "\\", "..", "\0")
 
@@ -74,6 +80,10 @@ class JsonRepository(Repository):
     def job_path(self, job_id: str) -> Path:
         """Where one posting lives."""
         return self.root / "jobs" / f"{_check_id(job_id, 'job_id')}.json"
+
+    def upload_path(self, upload_id: str) -> Path:
+        """Where the text of one uploaded file lives."""
+        return self.root / "uploads" / f"{_check_id(upload_id, 'upload_id')}.json"
 
     def fit_report_path(self, job_id: str) -> Path:
         """Where the fit report for one posting lives."""
@@ -203,6 +213,29 @@ class JsonRepository(Repository):
             create_only: Refuse to overwrite an existing posting with this id.
         """
         return self._write(self.job_path(job.id), job, create_only=create_only)
+
+    def save_upload(self, upload: UploadedDocument) -> UploadedDocument:
+        """Write extracted text to ``data/uploads/<id>.json``, never overwriting."""
+        return self._write(self.upload_path(upload.id), upload, create_only=True)
+
+    def get_upload(self, user_id: str, upload_id: str) -> UploadedDocument | None:
+        """Load one upload, or None if there is no such upload for this user."""
+        upload = self._read(self.upload_path(upload_id), UploadedDocument)
+        if upload is None or upload.user_id != user_id:
+            return None
+        return upload
+
+    def list_uploads(self, user_id: str) -> list[UploadedDocument]:
+        """Return every upload belonging to ``user_id``, newest first."""
+        uploads_dir = self.root / "uploads"
+        if not uploads_dir.is_dir():
+            return []
+        found = []
+        for path in sorted(uploads_dir.glob("*.json")):
+            upload = self._read(path, UploadedDocument)
+            if upload is not None and upload.user_id == user_id:
+                found.append(upload)
+        return sorted(found, key=lambda u: u.created_at, reverse=True)
 
     def save_fit_report(self, report: FitReport) -> FitReport:
         """Write a report to ``data/fit_reports/<job_id>.json``."""

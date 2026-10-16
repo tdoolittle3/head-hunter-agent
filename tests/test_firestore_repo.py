@@ -28,6 +28,7 @@ from head_hunter.schemas import (
     MetRequirement,
     Profile,
     Requirement,
+    UploadedDocument,
     base,
 )
 from head_hunter.storage import (
@@ -39,10 +40,12 @@ from head_hunter.storage import (
 from head_hunter.tools import (
     ToolError,
     _base,
+    add_skill,
     get_fit_report,
     list_jobs,
     load_job_and_profile,
     load_profile,
+    load_uploaded_resume,
     save_job_posting,
     save_profile,
     save_resume,
@@ -412,8 +415,74 @@ def test_a_hostile_user_id_cannot_reach_another_path(
 
 def test_the_model_cannot_see_or_set_the_user_id() -> None:
     """ADK must hide ``tool_context`` from the schema the model is given."""
-    for tool in (save_profile, list_jobs, save_resume, get_fit_report):
+    for tool in (
+        save_profile,
+        list_jobs,
+        save_resume,
+        get_fit_report,
+        load_uploaded_resume,
+        add_skill,
+    ):
         declaration = FunctionTool(tool)._get_declaration()
         properties = declaration.parameters.properties if declaration.parameters else {}
         assert "tool_context" not in properties
         assert "user_id" not in properties
+
+
+# Uploaded files, and two people --------------------------------------------
+
+
+def make_upload(upload_id: str, user_id: str = USER) -> UploadedDocument:
+    return UploadedDocument(
+        user_id=user_id,
+        id=upload_id,
+        filename="jane.pdf",
+        text="Rewrote the billing pipeline and cut month-end close to two days.",
+        pages=1,
+    )
+
+
+def test_an_upload_round_trips_under_its_user(repo: FirestoreRepository) -> None:
+    repo.save_upload(make_upload("up-1"))
+
+    assert repo.get_upload(USER, "up-1").filename == "jane.pdf"
+    assert [u.id for u in repo.list_uploads(USER)] == ["up-1"]
+
+
+def test_other_users_uploads_are_not_returned_from_firestore(
+    repo: FirestoreRepository,
+) -> None:
+    repo.save_upload(make_upload("up-a", user_id="alice"))
+
+    assert repo.get_upload("bob", "up-a") is None
+    assert repo.list_uploads("bob") == []
+
+
+def test_a_firestore_upload_cannot_overwrite_another(
+    repo: FirestoreRepository,
+) -> None:
+    repo.save_upload(make_upload("up-a"))
+    with pytest.raises(StorageError, match="Refusing to overwrite"):
+        repo.save_upload(make_upload("up-a"))
+
+
+def test_one_users_upload_is_unreadable_and_uncitable_by_another(
+    shared_store: FakeClient,
+) -> None:
+    """Bob cannot read Alice's resume, or hang an accomplishment on it."""
+    alices = FirestoreRepository(client=shared_store).save_upload(
+        make_upload("up-alice", user_id="alice")
+    )
+
+    assert load_uploaded_resume(tool_context=session("bob"))["status"] == "none"
+    with pytest.raises(ToolError, match="No upload with id"):
+        load_uploaded_resume(alices.id, tool_context=session("bob"))
+    with pytest.raises(ToolError, match="No upload with id"):
+        add_skill(
+            name="Billing",
+            level="working",
+            source_text="Rewrote the billing pipeline and cut month-end close",
+            upload_id=alices.id,
+            tool_context=session("bob"),
+        )
+    assert load_uploaded_resume(tool_context=session("alice"))["status"] == "ok"

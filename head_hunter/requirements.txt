@@ -21,6 +21,10 @@ google-cloud-firestore==2.31.0
 
 pydantic==2.13.5
 python-docx==1.2.0
+# Reads the text out of an uploaded PDF resume.
+pypdf==6.7.3
+# Accepts the resume upload. Arrives with google-adk; pinned like python-dotenv.
+python-multipart==0.0.32
 
 # Arrives transitively via google-adk, but pinned here so the deployed image
 # uses the version we tested rather than whatever the resolver picks.

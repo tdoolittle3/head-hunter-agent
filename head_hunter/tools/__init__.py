@@ -14,6 +14,7 @@ from head_hunter.tools.job_tools import list_jobs, prepare_job_text, save_job_po
 from head_hunter.tools.profile_tools import (
     add_accomplishment,
     add_open_question,
+    add_resume_accomplishment,
     add_role,
     add_skill,
     load_profile,
@@ -24,12 +25,15 @@ from head_hunter.tools.resume_tools import (
     render_resume,
     save_resume,
 )
+from head_hunter.tools.upload_tools import load_uploaded_resume
 
 INTERVIEWER_TOOLS = [
     load_profile,
+    load_uploaded_resume,
     save_profile,
     add_role,
     add_accomplishment,
+    add_resume_accomplishment,
     add_skill,
     add_open_question,
 ]
@@ -51,6 +55,7 @@ __all__ = [
     "ToolError",
     "add_accomplishment",
     "add_open_question",
+    "add_resume_accomplishment",
     "add_role",
     "add_skill",
     "get_fit_report",
@@ -58,6 +63,7 @@ __all__ = [
     "load_job_and_profile",
     "load_profile",
     "load_tailoring_context",
+    "load_uploaded_resume",
     "prepare_job_text",
     "render_resume",
     "report_tool_error",
