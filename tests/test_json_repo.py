@@ -13,6 +13,7 @@ from head_hunter.schemas import (
     MetRequirement,
     Profile,
     Requirement,
+    UploadedDocument,
 )
 from head_hunter.storage import JsonRepository, StorageError
 
@@ -176,3 +177,60 @@ def test_no_temporary_files_are_left_behind(repo: JsonRepository) -> None:
     repo.save_resume_document(USER, "job-a", "md", b"# Resume\n")
 
     assert list(repo.root.rglob("*.tmp")) == []
+
+
+# Uploaded files -----------------------------------------------------------
+
+
+def make_upload(upload_id: str, user_id: str = USER) -> UploadedDocument:
+    return UploadedDocument(
+        user_id=user_id,
+        id=upload_id,
+        filename="jane.pdf",
+        text="Jane Doe, Staff Engineer at Acme Foods since 2019.",
+        pages=1,
+    )
+
+
+def test_an_upload_round_trips_and_lists_newest_first(repo: JsonRepository) -> None:
+    first = repo.save_upload(make_upload("up-1"))
+    second = repo.save_upload(make_upload("up-2"))
+    second.created_at = first.created_at.replace(year=first.created_at.year + 1)
+    repo._write(repo.upload_path("up-2"), second)
+
+    assert repo.get_upload(USER, "up-1").text == first.text
+    assert [u.id for u in repo.list_uploads(USER)] == ["up-2", "up-1"]
+
+
+def test_missing_uploads_return_none_or_empty(repo: JsonRepository) -> None:
+    assert repo.get_upload(USER, "up-nope") is None
+    assert repo.list_uploads(USER) == []
+
+
+def test_other_users_uploads_are_not_returned(repo: JsonRepository) -> None:
+    repo.save_upload(make_upload("up-a", user_id="someone-else"))
+
+    assert repo.get_upload(USER, "up-a") is None
+    assert repo.list_uploads(USER) == []
+
+
+def test_an_upload_cannot_overwrite_another(repo: JsonRepository) -> None:
+    repo.save_upload(make_upload("up-a"))
+
+    with pytest.raises(StorageError, match="Refusing to overwrite"):
+        repo.save_upload(make_upload("up-a"))
+
+
+def test_an_upload_id_cannot_escape_the_data_directory(repo: JsonRepository) -> None:
+    with pytest.raises(StorageError, match="Unsafe upload_id"):
+        repo.get_upload(USER, "../../profile")
+
+
+def test_uploads_are_stored_as_readable_json(
+    repo: JsonRepository, tmp_path: Path
+) -> None:
+    repo.save_upload(make_upload("up-a"))
+
+    data = json.loads((tmp_path / "uploads" / "up-a.json").read_text("utf-8"))
+    assert data["filename"] == "jane.pdf"
+    assert data["text"].startswith("Jane Doe")

@@ -33,11 +33,17 @@ from typing import Any, TypeVar
 from pydantic import ValidationError
 
 from head_hunter import config
-from head_hunter.schemas import FitReport, JobPosting, Profile, Resume
+from head_hunter.schemas import (
+    FitReport,
+    JobPosting,
+    Profile,
+    Resume,
+    UploadedDocument,
+)
 from head_hunter.storage.json_repo import StorageError
 from head_hunter.storage.repository import Repository
 
-_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume)
+_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume, UploadedDocument)
 
 _UNSAFE_ID_PARTS = ("/", "\\", "..", "\0")
 
@@ -193,6 +199,39 @@ class FirestoreRepository(Repository):
         """
         ref = self._doc(job.user_id, "jobs", _check_id(job.id, "job_id"))
         return self._write(ref, job, create_only=create_only)
+
+    def save_upload(self, upload: UploadedDocument) -> UploadedDocument:
+        """Write extracted text, filed under the user, never overwriting."""
+        ref = self._doc(upload.user_id, "uploads", _check_id(upload.id, "upload_id"))
+        return self._write(ref, upload, create_only=True)
+
+    def get_upload(self, user_id: str, upload_id: str) -> UploadedDocument | None:
+        """Load one upload, or None if this user has no such upload."""
+        ref = self._doc(user_id, "uploads", _check_id(upload_id, "upload_id"))
+        upload = self._read(ref, UploadedDocument)
+        if upload is None or upload.user_id != user_id:
+            return None
+        return upload
+
+    def list_uploads(self, user_id: str) -> list[UploadedDocument]:
+        """Return a user's uploads, newest first."""
+        collection = self._user_doc(user_id).collection("uploads")
+        try:
+            snapshots = list(collection.stream())
+        except Exception as exc:  # noqa: BLE001 - surfaced, never swallowed
+            raise StorageError(f"Could not list uploads for {user_id}: {exc}") from exc
+        found = []
+        for snapshot in snapshots:
+            try:
+                upload = UploadedDocument.model_validate(snapshot.to_dict())
+            except ValidationError as exc:
+                raise StorageError(
+                    f"Upload {snapshot.id} is not a valid UploadedDocument. "
+                    f"Details: {exc}"
+                ) from exc
+            if upload.user_id == user_id:
+                found.append(upload)
+        return sorted(found, key=lambda u: u.created_at, reverse=True)
 
     def save_fit_report(self, report: FitReport) -> FitReport:
         """Write a report, filed under the job it scores."""

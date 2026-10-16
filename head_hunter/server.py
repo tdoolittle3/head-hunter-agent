@@ -18,10 +18,11 @@ Run it with ``make serve``. Which Firebase project to trust comes from
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
@@ -36,7 +37,16 @@ from head_hunter.auth import (
     google_verifier,
     verify_user,
 )
+from head_hunter.doc_text import (
+    MAX_FILE_BYTES,
+    ExtractionError,
+    display_name,
+    extract_text,
+)
 from head_hunter.ratelimit import RateLimiter
+from head_hunter.schemas import UploadedDocument
+from head_hunter.storage import Repository, StorageError
+from head_hunter.tools._base import repository as default_repository
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +68,23 @@ class ChatRequest(BaseModel):
         default=None,
         description="Continue this conversation. Omit to start a new one.",
     )
+
+
+class UploadResponse(BaseModel):
+    """What was stored from an uploaded file."""
+
+    upload_id: str
+    filename: str
+    characters: int
+    pages: int | None
+
+
+MAX_UPLOADS_PER_USER = 20
+"""A ceiling on stored uploads, since there is no delete yet."""
+
+UPLOAD_LIMITS = [(10, 60.0), (30, 86_400.0)]
+"""Uploads cost no Gemini call, but each is parsed and stored, so they get their
+own, separate limit rather than eating into the message allowance."""
 
 
 class Reply(BaseModel):
@@ -129,6 +156,8 @@ def create_app(
     runner: Runner | None = None,
     web_config: dict[str, str] | None = None,
     limiter: RateLimiter | None = None,
+    upload_limiter: RateLimiter | None = None,
+    repo_factory: Callable[[], Repository] | None = None,
 ) -> FastAPI:
     """Build the web app.
 
@@ -138,6 +167,9 @@ def create_app(
         runner: The ADK runner. Defaults to the real Head Hunter agent.
         web_config: Firebase settings for the login page. Defaults to the file.
         limiter: Per-user message limits. Defaults to the environment's.
+        upload_limiter: Per-user upload limits. Defaults to ``UPLOAD_LIMITS``.
+        repo_factory: Opens the store uploads are saved to. Defaults to the same
+            backend the agent's tools use, so the Interviewer can read them.
 
     Raises:
         RuntimeError: ``HH_SINGLE_USER`` is set. It pins every session to one
@@ -164,6 +196,8 @@ def create_app(
         )
     check = verifier or google_verifier
     limiter = limiter or RateLimiter(config.rate_limits())
+    upload_limiter = upload_limiter or RateLimiter(UPLOAD_LIMITS)
+    open_repository = repo_factory or default_repository
     runner = runner or _build_runner()
     api = FastAPI(title="Head Hunter", docs_url=None, redoc_url=None)
 
@@ -199,6 +233,63 @@ def create_app(
         user: Annotated[VerifiedUser, Depends(current_user)],
     ) -> dict[str, str | None]:
         return {"uid": user.uid, "email": user.email, "name": user.name}
+
+    @api.post("/api/upload", response_model=UploadResponse)
+    def upload(
+        user: Annotated[VerifiedUser, Depends(current_user)],
+        file: Annotated[UploadFile, File()],
+    ) -> UploadResponse:
+        """Turn an uploaded resume into stored text the Interviewer can read."""
+        wait = upload_limiter.check(user.uid)
+        if wait > 0:
+            seconds = max(1, round(wait))
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many uploads. Try again in {seconds}s.",
+                headers={"Retry-After": str(seconds)},
+            )
+
+        data = file.file.read(MAX_FILE_BYTES + 1)
+        if len(data) > MAX_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"That file is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB, "
+                    "which is too big for a resume."
+                ),
+            )
+        try:
+            extracted = extract_text(file.filename, data)
+        except ExtractionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        try:
+            repo = open_repository()
+            if len(repo.list_uploads(user.uid)) >= MAX_UPLOADS_PER_USER:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"You have reached the limit of {MAX_UPLOADS_PER_USER} "
+                    "uploaded files.",
+                )
+            record = repo.save_upload(
+                UploadedDocument(
+                    user_id=user.uid,
+                    filename=display_name(file.filename),
+                    text=extracted.text,
+                    pages=extracted.pages,
+                )
+            )
+        except StorageError:
+            logger.exception("Could not store an upload for %s", user.uid)
+            raise HTTPException(
+                status_code=500, detail="Could not save your file. Try again."
+            ) from None
+        return UploadResponse(
+            upload_id=record.id,
+            filename=record.filename,
+            characters=len(record.text),
+            pages=record.pages,
+        )
 
     @api.post("/api/chat", response_model=ChatResponse)
     async def chat(

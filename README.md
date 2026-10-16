@@ -86,12 +86,21 @@ Then open Web Preview on port 8000 and talk to the Head Hunter.
 
 ### Trying the Phase 2 loop
 
-1. Say hello. Ask it to interview you.
+1. Say hello. Ask it to interview you. Or skip the basics: click **Upload
+   resume** (PDF, Word or text, up to 5 MB) and it will read yours first.
 2. Spend ten minutes on your career. It will walk backwards through your roles
    and push for numbers. Answer as you would a recruiter.
 3. Paste a job description straight into the chat.
 4. Ask for a fit analysis.
 5. Ask for a resume for that job.
+
+An uploaded resume is a head start, not a shortcut around the rules. The agent
+reads it, checks the list of roles with you, and records each line it can quote
+**exactly**; the quote is checked against the file in plain Python, so a line the
+resume does not contain is refused. It asks you for the levels of your skills and
+for the numbers and results a resume leaves out. Only the extracted text is kept,
+never the file, and scanned or photographed resumes (no selectable text) cannot be
+read yet: paste the text instead.
 
 Everything lands as readable JSON under `data/` -- open the files and check
 them. `data/profile.json` should contain your actual words under `evidence`;
@@ -225,6 +234,7 @@ head_hunter/
   tools/         functions agents can call, grouped per agent
   scoring.py     deterministic fit score -- never the model's opinion
   jd_text.py     deterministic job-description clean-up
+  doc_text.py    turns an uploaded PDF / Word / text file into text, and checks quotes
   resume_validation.py  validate_resume() -- the traceability check, plain Python
   resume_render.py      Resume -> Markdown -> DOCX
   evals/         ADK eval sets + fixture profile, for hallucination checks
@@ -232,6 +242,7 @@ data/            local JSON store (gitignored)
   profile.json     your career profile
   jobs/            one file per posting
   fit_reports/     one file per analysis
+  uploads/         the text of each uploaded resume
   resumes/         one .json record, .md and .docx per posting
 docs/            deeper design notes: PLAN.md, DEPLOY.md
 tests/           pytest suite

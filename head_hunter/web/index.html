@@ -81,8 +81,11 @@
   <section id="app" hidden>
     <div id="log" aria-live="polite"></div>
     <form id="form">
+      <button type="button" id="attach" title="PDF, Word or text file, up to 5 MB">
+        Upload resume</button>
+      <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden>
       <textarea id="box" rows="2" aria-label="Message" required
-        placeholder="Say hello, paste a job description, or ask for a resume"></textarea>
+        placeholder="Say hello, paste a job description, or upload your resume"></textarea>
       <button class="primary" id="send" type="submit">Send</button>
     </form>
   </section>
@@ -123,37 +126,64 @@
     addMessage("Say hello to get started. Your profile is saved between visits.", "note");
   }
 
-  async function send(text) {
-    const user = auth.currentUser;
-    const token = await user.getIdToken();  // refreshed automatically when stale
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ message: text, session_id: sessionId }),
-    });
+  const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;  // keep in step with doc_text.MAX_FILE_BYTES
+
+  const idToken = () => auth.currentUser.getIdToken();  // refreshed when stale
+
+  // Turn a failed response into an Error whose message is safe to show. A 401
+  // means the token was refused, so sign out rather than leave a dead session.
+  async function failure(res, fallback) {
     if (res.status === 401) {
       await signOut(auth);
-      throw new Error("Your sign-in was not accepted. Please sign in again.");
+      return new Error("Your sign-in was not accepted. Please sign in again.");
     }
+    let detail = fallback;
+    try {
+      const body = await res.json();
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch (_) {}
+    return new Error(detail);
+  }
+
+  async function send(text) {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + await idToken() },
+      body: JSON.stringify({ message: text, session_id: sessionId }),
+    });
     if (res.status === 404) {
       sessionId = null;
       throw new Error("That conversation could not be found. Send your message again to start a new one.");
     }
-    if (!res.ok) {
-      let detail = "Something went wrong. Try again.";
-      try { detail = (await res.json()).detail || detail; } catch (_) {}
-      throw new Error(typeof detail === "string" ? detail : "That message could not be sent.");
-    }
+    if (!res.ok) throw await failure(res, "Something went wrong. Try again.");
     return res.json();
   }
 
-  $("form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const text = $("box").value.trim();
-    if (!text) return;
-    $("box").value = "";
-    $("box").disabled = $("send").disabled = true;
-    addMessage(text, "me");
+  async function uploadResume(file) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new Error("That file is larger than 5 MB, which is too big for a resume.");
+    }
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + await idToken() },
+      body,
+    });
+    if (!res.ok) throw await failure(res, "That file could not be uploaded.");
+    return res.json();
+  }
+
+  function setBusy(busy) {
+    for (const id of ["box", "send", "attach"]) $(id).disabled = busy;
+    if (!busy) $("box").focus();
+  }
+
+  // One turn with the agent. `shown` is what appears in the log when it differs
+  // from what is sent (an upload sends a sentence but shows the file name).
+  async function converse(text, shown) {
+    setBusy(true);
+    addMessage(shown || text, "me");
     const waiting = addMessage("Thinking…", "note");
     try {
       const reply = await send(text);
@@ -165,9 +195,40 @@
       waiting.remove();
       addMessage(error.message, "err");
     } finally {
-      $("box").disabled = $("send").disabled = false;
-      $("box").focus();
+      setBusy(false);
     }
+  }
+
+  $("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = $("box").value.trim();
+    if (!text) return;
+    $("box").value = "";
+    converse(text);
+  });
+
+  $("attach").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", async () => {
+    const file = $("file").files[0];
+    $("file").value = "";  // so choosing the same file again still fires
+    if (!file) return;
+    setBusy(true);
+    const waiting = addMessage("Uploading " + file.name + "…", "note");
+    let uploaded;
+    try {
+      uploaded = await uploadResume(file);
+    } catch (error) {
+      addMessage(error.message, "err");
+      return;
+    } finally {
+      waiting.remove();
+      setBusy(false);
+    }
+    await converse(
+      "I just uploaded my resume, " + uploaded.filename +
+        " (upload id " + uploaded.upload_id + "). Please read it.",
+      "Uploaded " + uploaded.filename,
+    );
   });
 
   $("box").addEventListener("keydown", (event) => {

@@ -12,7 +12,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from head_hunter.schemas import FitReport, JobPosting, Profile, Resume
+from head_hunter.schemas import (
+    FitReport,
+    JobPosting,
+    Profile,
+    Resume,
+    UploadedDocument,
+)
 
 
 class Repository(ABC):
@@ -57,6 +63,18 @@ class Repository(ABC):
     @abstractmethod
     def get_resume(self, user_id: str, job_id: str) -> Resume | None:
         """Load the resume written for one job, or None if there is not one yet."""
+
+    @abstractmethod
+    def save_upload(self, upload: UploadedDocument) -> UploadedDocument:
+        """Write the text of an uploaded file. Refuses to overwrite an id."""
+
+    @abstractmethod
+    def get_upload(self, user_id: str, upload_id: str) -> UploadedDocument | None:
+        """Load one upload, or None if this user has no such upload."""
+
+    @abstractmethod
+    def list_uploads(self, user_id: str) -> list[UploadedDocument]:
+        """Return a user's uploads, newest first."""
 
     @abstractmethod
     def save_resume_document(

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from google.adk.tools import ToolContext
 
+from head_hunter.doc_text import is_excerpt
 from head_hunter.schemas import (
     Accomplishment,
     Evidence,
@@ -19,6 +20,7 @@ from head_hunter.schemas import (
     Profile,
     Role,
     Skill,
+    UploadedDocument,
     new_id,
 )
 from head_hunter.tools._base import ToolError, current_user_id, repository
@@ -35,7 +37,7 @@ def _load_or_create(tool_context: ToolContext | None) -> Profile:
     )
 
 
-def _require_source_text(source_text: str, what: str) -> str:
+def _require_source_text(source_text: str, what: str, from_upload: bool = False) -> str:
     """Reject an empty or throwaway ``source_text``.
 
     A one-word quote is not evidence, and a resume bullet cited against it
@@ -44,6 +46,13 @@ def _require_source_text(source_text: str, what: str) -> str:
     """
     cleaned = " ".join(source_text.split())
     if len(cleaned.split()) < MIN_SOURCE_TEXT_WORDS:
+        if from_upload:
+            raise ToolError(
+                f"Cannot record {what}: source_text is too short. Quote the whole "
+                "line or bullet of the resume that says it, exactly as written "
+                f"(at least {MIN_SOURCE_TEXT_WORDS} words), not the user's chat "
+                "message and not a single word."
+            )
         raise ToolError(
             f"Cannot record {what} without the user's own words. Pass the "
             "relevant part of what they actually said as source_text "
@@ -53,17 +62,51 @@ def _require_source_text(source_text: str, what: str) -> str:
     return cleaned
 
 
-def _add_evidence(profile: Profile, source_text: str, note: str | None) -> Evidence:
+def _upload_for_quote(
+    upload_id: str | None, source_text: str, tool_context: ToolContext | None
+) -> UploadedDocument | None:
+    """Return the upload a quote is claimed to come from, after checking it.
+
+    A quote attributed to an upload must actually be in it. This is what keeps a
+    resume from becoming a back door for invented experience: the model cannot
+    record "led a team of twelve" as the resume's words unless the resume says so.
+    """
+    if not upload_id:
+        return None
+    upload = repository().get_upload(current_user_id(tool_context), upload_id)
+    if upload is None:
+        raise ToolError(
+            f"No upload with id {upload_id!r}. Call load_uploaded_resume to get "
+            "the right one."
+        )
+    if not is_excerpt(source_text, upload.text):
+        raise ToolError(
+            f"source_text is not a verbatim excerpt of {upload.filename!r}. Quote "
+            "the words the resume actually uses, exactly, or leave out upload_id "
+            "and use what the user told you. If the resume does not say it, ask "
+            "the user."
+        )
+    return upload
+
+
+def _add_evidence(
+    profile: Profile,
+    source_text: str,
+    note: str | None,
+    upload: UploadedDocument | None = None,
+) -> Evidence:
     """Append a new Evidence record and return it.
 
     The id is checked against the ids already in this profile. A duplicate would
     make every citation to it ambiguous, and the profile is small enough that
     the check is free.
     """
+    if upload is not None:
+        note = f"{note}; from uploaded file {upload.filename}"
     evidence = Evidence(
         id=new_id("ev", {e.id for e in profile.evidence}),
         source_text=source_text,
-        source="interview",
+        source="resume_upload" if upload is not None else "interview",
         note=note,
     )
     profile.evidence.append(evidence)
@@ -258,6 +301,7 @@ def add_accomplishment(
     source_text: str,
     metrics: list[str] | None = None,
     tools: list[str] | None = None,
+    upload_id: str | None = None,
     tool_context: ToolContext | None = None,
 ) -> dict:
     """Record something the user did, in situation / action / result form.
@@ -274,6 +318,8 @@ def add_accomplishment(
             This is the evidence a resume bullet will later have to cite.
         metrics: Numbers they gave, e.g. ['cut close from 9 days to 2'].
         tools: Technologies or systems they named.
+        upload_id: Set this when source_text is quoted from the user's uploaded
+            resume. The quote must then appear in that file, word for word.
         tool_context: Supplied by the system to say whose records these are.
             Never fill this in.
 
@@ -289,8 +335,13 @@ def add_accomplishment(
             "Call add_role first, or use load_profile to get the right id."
         )
 
-    cleaned = _require_source_text(source_text, "an accomplishment")
-    evidence = _add_evidence(profile, cleaned, note=f"accomplishment at {role_id}")
+    cleaned = _require_source_text(
+        source_text, "an accomplishment", from_upload=bool(upload_id)
+    )
+    upload = _upload_for_quote(upload_id, cleaned, tool_context)
+    evidence = _add_evidence(
+        profile, cleaned, note=f"accomplishment at {role_id}", upload=upload
+    )
 
     accomplishment = Accomplishment(
         id=new_id("acc", {a.id for a in profile.accomplishments}),
@@ -314,12 +365,78 @@ def add_accomplishment(
     }
 
 
+NOT_STATED = "Not stated in resume"
+
+
+def add_resume_accomplishment(
+    role_id: str,
+    source_text: str,
+    upload_id: str,
+    tools: list[str] | None = None,
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Record one line of the user's uploaded resume as an accomplishment.
+
+    Use this for what the resume states, one bullet at a time. It is simpler than
+    add_accomplishment on purpose: a resume line rarely gives a situation and a
+    result, so those are filled in as "Not stated in resume" and you ask the user
+    for them afterwards. The quote must appear in the file word for word, or this
+    refuses.
+
+    Args:
+        role_id: The role this line belongs to, from add_role or load_profile.
+        source_text: The resume line or bullet, copied exactly as written.
+        upload_id: The upload it came from, from load_uploaded_resume.
+        tools: Technologies or systems the line names.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
+
+    Returns:
+        The accomplishment id and the evidence id, and a reminder that the
+        situation and result still need asking about.
+    """
+    profile = _load_or_create(tool_context)
+
+    if not any(r.id == role_id for r in profile.roles):
+        known = ", ".join(f"{r.id} ({r.company})" for r in profile.roles) or "none yet"
+        raise ToolError(
+            f"No role with id {role_id!r}. Known roles: {known}. "
+            "Call add_role first, or use load_profile to get the right id."
+        )
+
+    cleaned = _require_source_text(source_text, "a resume line", from_upload=True)
+    upload = _upload_for_quote(upload_id, cleaned, tool_context)
+    evidence = _add_evidence(
+        profile, cleaned, note=f"resume line at {role_id}", upload=upload
+    )
+    accomplishment = Accomplishment(
+        id=new_id("acc", {a.id for a in profile.accomplishments}),
+        role_id=role_id,
+        situation=NOT_STATED,
+        action=cleaned,
+        result=NOT_STATED,
+        tools=tools or [],
+        evidence_id=evidence.id,
+        source_text=cleaned,
+    )
+    profile.accomplishments.append(accomplishment)
+    repository().save_profile(profile)
+
+    return {
+        "status": "saved",
+        "accomplishment_id": accomplishment.id,
+        "evidence_id": evidence.id,
+        "still_needed": "situation and result: ask the user about them",
+    }
+
+
 def add_skill(
     name: str,
     level: str,
     source_text: str,
     years: float | None = None,
     last_used: str | None = None,
+    upload_id: str | None = None,
     tool_context: ToolContext | None = None,
 ) -> dict:
     """Record a skill the user has, backed by what they said about it.
@@ -333,6 +450,9 @@ def add_skill(
         source_text: The user's own words about this skill.
         years: Years of real use.
         last_used: Roughly when last used, e.g. '2024' or 'current'.
+        upload_id: Set this when source_text is quoted from the user's uploaded
+            resume. The quote must then appear in that file, word for word. The
+            level still has to come from the user, not from the resume.
         tool_context: Supplied by the system to say whose records these are.
             Never fill this in.
 
@@ -346,8 +466,11 @@ def add_skill(
         )
 
     profile = _load_or_create(tool_context)
-    cleaned = _require_source_text(source_text, f"the skill {name!r}")
-    evidence = _add_evidence(profile, cleaned, note=f"skill: {name}")
+    cleaned = _require_source_text(
+        source_text, f"the skill {name!r}", from_upload=bool(upload_id)
+    )
+    upload = _upload_for_quote(upload_id, cleaned, tool_context)
+    evidence = _add_evidence(profile, cleaned, note=f"skill: {name}", upload=upload)
 
     existing = next((s for s in profile.skills if s.name.lower() == name.lower()), None)
     if existing is not None:

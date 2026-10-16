@@ -36,6 +36,7 @@ from head_hunter.schemas.resume import (
     ValidationFailure,
     ValidationResult,
 )
+from head_hunter.schemas.upload import UploadedDocument, UploadKind
 
 __all__ = [
     "Accomplishment",
@@ -63,6 +64,8 @@ __all__ = [
     "ResumeSection",
     "Role",
     "Skill",
+    "UploadKind",
+    "UploadedDocument",
     "SkillLevel",
     "StoredRecord",
     "UnmetRequirement",
