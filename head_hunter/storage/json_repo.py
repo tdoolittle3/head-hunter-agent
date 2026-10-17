@@ -11,6 +11,7 @@ to open these files and read them:
       resumes/<job_id>.json   the record
       resumes/<job_id>.md     the canonical rendering
       resumes/<job_id>.docx   the file you send
+      journal/<entry_id>.json one event in the job search
 
 Writes go to a temporary file and are then moved into place, so a crash
 mid-write cannot leave a half-written profile behind. The temporary name is
@@ -38,13 +39,22 @@ from head_hunter import config
 from head_hunter.schemas import (
     FitReport,
     JobPosting,
+    JournalEntry,
     Profile,
     Resume,
     UploadedDocument,
 )
 from head_hunter.storage.repository import Repository
 
-_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume, UploadedDocument)
+_Record = TypeVar(
+    "_Record",
+    Profile,
+    JobPosting,
+    FitReport,
+    Resume,
+    UploadedDocument,
+    JournalEntry,
+)
 
 _UNSAFE_ID_PARTS = ("/", "\\", "..", "\0")
 
@@ -236,6 +246,26 @@ class JsonRepository(Repository):
             if upload is not None and upload.user_id == user_id:
                 found.append(upload)
         return sorted(found, key=lambda u: u.created_at, reverse=True)
+
+    def journal_path(self, entry_id: str) -> Path:
+        """Where one journal entry lives."""
+        return self.root / "journal" / f"{_check_id(entry_id, 'entry_id')}.json"
+
+    def save_journal_entry(self, entry: JournalEntry) -> JournalEntry:
+        """Write an entry to ``data/journal/<id>.json``, never overwriting."""
+        return self._write(self.journal_path(entry.id), entry, create_only=True)
+
+    def list_journal_entries(self, user_id: str) -> list[JournalEntry]:
+        """Return every entry belonging to ``user_id``, oldest first."""
+        journal_dir = self.root / "journal"
+        if not journal_dir.is_dir():
+            return []
+        found = []
+        for path in sorted(journal_dir.glob("*.json")):
+            entry = self._read(path, JournalEntry)
+            if entry is not None and entry.user_id == user_id:
+                found.append(entry)
+        return sorted(found, key=lambda e: e.occurred_at)
 
     def save_fit_report(self, report: FitReport) -> FitReport:
         """Write a report to ``data/fit_reports/<job_id>.json``."""

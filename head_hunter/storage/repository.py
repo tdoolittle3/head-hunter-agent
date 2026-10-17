@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from head_hunter.schemas import (
     FitReport,
     JobPosting,
+    JournalEntry,
     Profile,
     Resume,
     UploadedDocument,
@@ -75,6 +76,14 @@ class Repository(ABC):
     @abstractmethod
     def list_uploads(self, user_id: str) -> list[UploadedDocument]:
         """Return a user's uploads, newest first."""
+
+    @abstractmethod
+    def save_journal_entry(self, entry: JournalEntry) -> JournalEntry:
+        """Write one journal entry. Refuses to overwrite an existing id."""
+
+    @abstractmethod
+    def list_journal_entries(self, user_id: str) -> list[JournalEntry]:
+        """Return a user's journal entries, oldest first."""
 
     @abstractmethod
     def save_resume_document(

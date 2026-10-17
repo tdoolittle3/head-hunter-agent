@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Head Hunter</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
     --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64;
@@ -56,12 +57,59 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     padding: 10px 12px; max-height: 200px; }
   #fatal { padding: 40px 0; color: var(--err); }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button { border-color: transparent; background: none; color: var(--muted); }
+  .tabs button[aria-pressed="true"] { color: var(--ink); border-color: var(--line);
+    background: var(--bg); }
+  #funnel { padding: 24px 0 40px; }
+  #funnel .wide { max-width: 1040px; margin: 0 auto; }
+  .fn-stage { background: #0c1019; border: 1px solid #1b2230; border-radius: 6px;
+    padding: 18px 8px 8px; overflow-x: auto; color: #e8edf7; }
+  .fn-stage svg { display: block; min-width: 760px; width: 100%; height: auto; }
+  .fn-bar { display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+    font: 11px/1 "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing: .12em; text-transform: uppercase; color: #7d889d; padding: 6px 14px 10px; }
+  .fn-bar i { display: inline-block; width: 18px; height: 3px; border-radius: 2px;
+    margin-right: 8px; vertical-align: middle; }
+  .fn-bar button { margin-left: auto; background: transparent; color: #e8edf7;
+    border-color: #1b2230; border-radius: 3px; padding: 6px 12px; font: inherit; }
+  .fn-bar button:hover { border-color: #22d3ee; color: #22d3ee; }
+  .fn-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1px; background: #1b2230; border: 1px solid #1b2230; border-radius: 6px;
+    overflow: hidden; margin-top: 16px; }
+  .fn-stat { background: #0c1019; padding: 18px 20px; display: flex; flex-direction: column;
+    gap: 8px; min-width: 0; color: #e8edf7; }
+  .fn-stat span { font: 11px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .18em;
+    text-transform: uppercase; color: #7d889d; }
+  .fn-stat strong { font: 500 34px/1 Unbounded, "Arial Black", system-ui, sans-serif;
+    letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .fn-stat small { font: 12px "IBM Plex Mono", ui-monospace, monospace; color: #7d889d; }
+  #fn-empty { padding: 56px 24px; text-align: center; color: #7d889d; }
+  #fn-empty h2 { margin: 0 0 8px; color: #e8edf7; font-size: 22px; }
+  .rib { transition: opacity .25s, fill-opacity .25s; fill-opacity: .5; }
+  .rib:hover { fill-opacity: .9; }
+  svg:has(.rib:hover) .rib:not(:hover) { opacity: .18; }
+  .flow { fill: none; stroke: #fff; stroke-width: 1.4; stroke-linecap: round;
+    stroke-dasharray: 1 14; opacity: .55; pointer-events: none; }
+  @keyframes drift { to { stroke-dashoffset: -45; } }
+  @media (prefers-reduced-motion: no-preference) { .flow { animation: drift 2.4s linear infinite; } }
+  .hd-n { font: 500 30px Unbounded, "Arial Black", system-ui, sans-serif; fill: #e8edf7; }
+  .hd-l { font: 10.5px "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .2em;
+    fill: #7d889d; text-transform: uppercase; }
+  .hd-p { font: 11px "IBM Plex Mono", ui-monospace, monospace; fill: #7d889d; }
+  .ls-l { font: 11px "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .12em;
+    text-transform: uppercase; }
+  .ls-n { font: 500 16px Unbounded, "Arial Black", system-ui, sans-serif; fill: #e8edf7; }
 </style>
 </head>
 <body>
 <header>
   <div class="wrap">
     <h1>Head Hunter</h1>
+    <nav class="tabs" id="tabs" aria-label="Views" hidden>
+      <button id="tab-chat" aria-pressed="true">Chat</button>
+      <button id="tab-funnel" aria-pressed="false">Funnel</button>
+    </nav>
     <span class="who" id="who"></span>
     <button id="new" hidden>New conversation</button>
     <button id="out" hidden>Sign out</button>
@@ -89,8 +137,32 @@
       <button class="primary" id="send" type="submit">Send</button>
     </form>
   </section>
+
+  <section id="funnel" hidden>
+    <div class="wide">
+      <div id="fn-error" role="alert" style="color:var(--err);margin-bottom:12px" hidden></div>
+      <div class="fn-stage">
+        <div id="fn-empty" hidden>
+          <h2>No applications yet</h2>
+          <p>Tell the Coach in the chat when you apply, hear back, interview or get an
+            answer, and the graph fills in.</p>
+        </div>
+        <svg id="fn-svg" viewBox="0 0 1000 500" role="img" aria-label="Application funnel"></svg>
+        <div class="fn-bar">
+          <span><i style="background:linear-gradient(90deg,#22d3ee,#ffc83d)"></i>Moved forward</span>
+          <span><i style="background:#ff5636"></i>Rejected</span>
+          <span><i style="background:#8b7bff"></i>Withdrew</span>
+          <span><i style="background:#5a6479"></i>No response</span>
+          <span><i style="background:#6aa8ff"></i>In progress</span>
+          <button type="button" id="fn-replay">Replay</button>
+        </div>
+      </div>
+      <div class="fn-stats" id="fn-stats"></div>
+    </div>
+  </section>
 </main>
 
+<script src="/funnel.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
   import {
@@ -261,12 +333,58 @@
     throw error;
   }
 
+  let view = "chat";
+
+  async function loadFunnel() {
+    show("fn-error", false);
+    try {
+      const res = await fetch("/api/funnel", {
+        headers: { Authorization: "Bearer " + await idToken() },
+      });
+      if (!res.ok) throw await failure(res, "Could not load your applications.");
+      const data = await res.json();
+      const empty = data.total === 0;
+      show("fn-empty", empty);
+      show("fn-svg", !empty);
+      $("fn-stats").replaceChildren();
+      if (empty) { $("fn-svg").replaceChildren(); return; }
+      HHFunnel.render($("fn-svg"), data);
+      for (const [label, value, note] of HHFunnel.stats(data)) {
+        const card = document.createElement("div");
+        card.className = "fn-stat";
+        for (const [tag, text] of [["span", label], ["strong", value], ["small", note]]) {
+          const el = document.createElement(tag);
+          el.textContent = text;
+          card.appendChild(el);
+        }
+        $("fn-stats").appendChild(card);
+      }
+    } catch (error) {
+      $("fn-error").textContent = error.message;
+      show("fn-error", true);
+    }
+  }
+
+  function layout() {
+    const user = auth.currentUser;
+    show("app", !!user && view === "chat");
+    show("funnel", !!user && view === "funnel");
+    show("new", !!user && view === "chat");
+    $("tab-chat").setAttribute("aria-pressed", String(view === "chat"));
+    $("tab-funnel").setAttribute("aria-pressed", String(view === "funnel"));
+  }
+
+  $("tab-chat").addEventListener("click", () => { view = "chat"; layout(); $("box").focus(); });
+  $("tab-funnel").addEventListener("click", () => { view = "funnel"; layout(); loadFunnel(); });
+  $("fn-replay").addEventListener("click", () => HHFunnel.replay($("fn-svg")));
+
   onAuthStateChanged(auth, (user) => {
     show("signin", !user);
-    show("app", !!user);
-    show("new", !!user);
+    show("tabs", !!user);
     show("out", !!user);
     $("who").textContent = user ? (user.email || user.displayName || "") : "";
+    view = "chat";
+    layout();
     if (user) { reset(); $("box").focus(); }
   });
 </script>

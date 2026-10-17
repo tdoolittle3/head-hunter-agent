@@ -13,6 +13,7 @@ rather than a text editor::
     users/<user_id>/fit_reports/<job_id>
     users/<user_id>/resumes/<job_id>
     users/<user_id>/resume_documents/<job_id>.<suffix>
+    users/<user_id>/journal/<entry_id>
 
 Records are stored as plain fields rather than one JSON blob, so the console
 shows named values a person can scan.
@@ -36,6 +37,7 @@ from head_hunter import config
 from head_hunter.schemas import (
     FitReport,
     JobPosting,
+    JournalEntry,
     Profile,
     Resume,
     UploadedDocument,
@@ -43,7 +45,15 @@ from head_hunter.schemas import (
 from head_hunter.storage.json_repo import StorageError
 from head_hunter.storage.repository import Repository
 
-_Record = TypeVar("_Record", Profile, JobPosting, FitReport, Resume, UploadedDocument)
+_Record = TypeVar(
+    "_Record",
+    Profile,
+    JobPosting,
+    FitReport,
+    Resume,
+    UploadedDocument,
+    JournalEntry,
+)
 
 _UNSAFE_ID_PARTS = ("/", "\\", "..", "\0")
 
@@ -232,6 +242,31 @@ class FirestoreRepository(Repository):
             if upload.user_id == user_id:
                 found.append(upload)
         return sorted(found, key=lambda u: u.created_at, reverse=True)
+
+    def save_journal_entry(self, entry: JournalEntry) -> JournalEntry:
+        """Write a journal entry, filed under the user, never overwriting."""
+        ref = self._doc(entry.user_id, "journal", _check_id(entry.id, "entry_id"))
+        return self._write(ref, entry, create_only=True)
+
+    def list_journal_entries(self, user_id: str) -> list[JournalEntry]:
+        """Return a user's journal entries, oldest first."""
+        collection = self._user_doc(user_id).collection("journal")
+        try:
+            snapshots = list(collection.stream())
+        except Exception as exc:  # noqa: BLE001 - surfaced, never swallowed
+            raise StorageError(f"Could not list journal for {user_id}: {exc}") from exc
+        found = []
+        for snapshot in snapshots:
+            try:
+                entry = JournalEntry.model_validate(snapshot.to_dict())
+            except ValidationError as exc:
+                raise StorageError(
+                    f"Journal entry {snapshot.id} is not a valid JournalEntry. "
+                    f"Details: {exc}"
+                ) from exc
+            if entry.user_id == user_id:
+                found.append(entry)
+        return sorted(found, key=lambda e: e.occurred_at)
 
     def save_fit_report(self, report: FitReport) -> FitReport:
         """Write a report, filed under the job it scores."""
