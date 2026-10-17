@@ -10,6 +10,7 @@ from __future__ import annotations
 from google.adk.agents import Agent
 
 from head_hunter import config
+from head_hunter.agents.coach.agent import root_agent as coach
 from head_hunter.agents.fit_analyst.agent import root_agent as fit_analyst
 from head_hunter.agents.intake.agent import root_agent as intake
 from head_hunter.agents.interviewer.agent import root_agent as interviewer
@@ -22,12 +23,12 @@ root_agent = Agent(
     model=config.model(),
     description=(
         "Front door of the job-search system. Works out what the user needs "
-        "and routes to the Interviewer, Intake, the Fit Analyst, or the "
-        "Resume Tailor."
+        "and routes to the Interviewer, Intake, the Fit Analyst, the "
+        "Resume Tailor, or the Coach."
     ),
     instruction=load_prompt(__file__),
     tools=COORDINATOR_TOOLS,
-    sub_agents=[interviewer, intake, fit_analyst, resume_tailor],
+    sub_agents=[interviewer, intake, fit_analyst, resume_tailor, coach],
     # Without this a raising tool takes the whole run down with a stack trace
     # instead of the agent explaining the failure (AGENTS.md rule 6).
     on_tool_error_callback=report_tool_error,

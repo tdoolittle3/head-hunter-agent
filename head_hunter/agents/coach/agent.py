@@ -1,0 +1,28 @@
+"""Logs applications and interview outcomes, and reflects on them with the user.
+
+Tools do the persisting and the counting; this module only wires the agent
+together.
+"""
+
+from __future__ import annotations
+
+from google.adk.agents import Agent
+
+from head_hunter import config
+from head_hunter.prompts import load_prompt
+from head_hunter.tools import COACH_TOOLS, report_tool_error
+
+root_agent = Agent(
+    name="coach",
+    model=config.model(),
+    description=(
+        "Records each application and what happened to it (screens, "
+        "interviews, offers, rejections), asks reflective questions, and "
+        "reports the application funnel."
+    ),
+    instruction=load_prompt(__file__),
+    tools=COACH_TOOLS,
+    # Without this a raising tool takes the whole run down with a stack trace
+    # instead of the agent explaining the failure (AGENTS.md rule 6).
+    on_tool_error_callback=report_tool_error,
+)

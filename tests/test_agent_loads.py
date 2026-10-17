@@ -30,12 +30,13 @@ def test_instruction_comes_from_the_markdown_prompt() -> None:
     assert "No invented experience" in root_agent.instruction
 
 
-def test_coordinator_routes_to_the_four_specialists() -> None:
+def test_coordinator_routes_to_the_five_specialists() -> None:
     assert [a.name for a in root_agent.sub_agents] == [
         "interviewer",
         "intake",
         "fit_analyst",
         "resume_tailor",
+        "coach",
     ]
 
 
@@ -47,7 +48,7 @@ def test_only_the_interviewer_can_write_career_facts() -> None:
     by_agent[root_agent.name] = {t.__name__ for t in root_agent.tools}
 
     assert writers <= by_agent["interviewer"]
-    for name in ("intake", "fit_analyst", "resume_tailor", "head_hunter"):
+    for name in ("intake", "fit_analyst", "resume_tailor", "coach", "head_hunter"):
         assert not (writers & by_agent[name]), f"{name} can write career facts"
 
 

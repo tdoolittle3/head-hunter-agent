@@ -2,8 +2,9 @@
 
 ``adk web`` has no login: it hands every browser the same user id. This app is
 what stands between the internet and the agent once more than one person can
-reach it. Every route except ``/api/health`` and the login page requires a
-Firebase token, and the user id the agent runs under comes from that verified
+reach it. Every route except ``/api/health``, the login page and its static
+files (``/funnel.js``, ``/firebase-config.json``) requires a Firebase token, and
+the user id the agent runs under comes from that verified
 token and nowhere else.
 The request body has no user field -- sending one is rejected -- so there is
 nothing a client can set to become someone else.
@@ -43,6 +44,7 @@ from head_hunter.doc_text import (
     display_name,
     extract_text,
 )
+from head_hunter.funnel import Funnel, compute_funnel
 from head_hunter.ratelimit import RateLimiter
 from head_hunter.schemas import UploadedDocument
 from head_hunter.storage import Repository, StorageError
@@ -220,6 +222,14 @@ def create_app(
             headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"},
         )
 
+    @api.get("/funnel.js", include_in_schema=False)
+    def funnel_script() -> FileResponse:
+        return FileResponse(
+            WEB_DIR / "funnel.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @api.get("/firebase-config.json", include_in_schema=False)
     def firebase_config() -> JSONResponse:
         return JSONResponse(web_config)
@@ -233,6 +243,18 @@ def create_app(
         user: Annotated[VerifiedUser, Depends(current_user)],
     ) -> dict[str, str | None]:
         return {"uid": user.uid, "email": user.email, "name": user.name}
+
+    @api.get("/api/funnel", response_model=Funnel)
+    def funnel(user: Annotated[VerifiedUser, Depends(current_user)]) -> Funnel:
+        """Counts for the application funnel graph, from the caller's own journal."""
+        try:
+            entries = open_repository().list_journal_entries(user.uid)
+        except StorageError:
+            logger.exception("Could not read the journal for %s", user.uid)
+            raise HTTPException(
+                status_code=500, detail="Could not load your applications. Try again."
+            ) from None
+        return compute_funnel(entries)
 
     @api.post("/api/upload", response_model=UploadResponse)
     def upload(
