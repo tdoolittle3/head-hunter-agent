@@ -51,7 +51,7 @@ flowchart TD
 | **Fit Analyst** | Compares a posting to your profile. Gives a score, lists requirements you meet with the evidence, requirements you don't, and separates stretch gaps from hard blockers. |
 | **Resume Tailor** | Writes an ATS-friendly resume for one specific job. Every bullet is tied to a profile entry. A separate validator rejects anything it can't trace, and the DOCX cannot be produced until it passes. |
 | **Inbox Scout** | Reads your Gmail, spots recruiter outreach, pulls out role/company/comp, and feeds it to Intake. |
-| **Coach** | Logs applications and interviews, asks reflective questions after each one, and points out patterns over time. Everything it logs draws the **Funnel** page: a flow graph from applications sent to offers, with rejections and silence leaving at the stage where they happened. |
+| **Coach** | Logs applications and interviews, asks reflective questions after each one, and points out patterns over time. Everything it logs draws the **Profile** page: your career profile and match stats at a glance, over a flow graph from applications sent to offers, with rejections and silence leaving at the stage where they happened. |
 
 ### Rules that don't bend
 
@@ -237,7 +237,8 @@ head_hunter/
   doc_text.py    turns an uploaded PDF / Word / text file into text, and checks quotes
   resume_validation.py  validate_resume() -- the traceability check, plain Python
   resume_render.py      Resume -> Markdown -> DOCX
-  funnel.py             journal entries -> per-stage counts for the Funnel graph
+  funnel.py             journal entries -> per-stage counts for the funnel graph
+  overview.py           profile, jobs and journal -> the Profile page's numbers
   evals/         ADK eval sets + fixture profile, for hallucination checks
 data/            local JSON store (gitignored)
   profile.json     your career profile

@@ -283,24 +283,56 @@ def api(local_store, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(app)
 
 
-def test_the_funnel_endpoint_requires_sign_in(api: TestClient) -> None:
-    assert api.get("/api/funnel").status_code == 401
+def test_the_overview_endpoint_requires_sign_in(api: TestClient) -> None:
+    assert api.get("/api/overview").status_code == 401
 
 
-def test_the_funnel_endpoint_shows_only_the_callers_applications(
+def test_the_overview_shows_only_the_callers_applications(
     api: TestClient, local_store: JsonRepository
 ) -> None:
     local_store.save_journal_entry(event("applied", "A", 1, user="alice-uid"))
     local_store.save_journal_entry(event("applied", "B", 1, user="bob-uid"))
     local_store.save_journal_entry(event("screen", "B", 1, user="bob-uid"))
 
-    alice = api.get("/api/funnel", headers=bearer("alice-token")).json()
-    bob = api.get("/api/funnel", headers=bearer("bob-token")).json()
+    alice = api.get("/api/overview", headers=bearer("alice-token")).json()["funnel"]
+    bob = api.get("/api/overview", headers=bearer("bob-token")).json()["funnel"]
 
     assert alice["total"] == 1
     assert bob["total"] == 1
     assert alice["stages"][1]["count"] == 0
     assert bob["stages"][1]["count"] == 1
+
+
+def test_the_overview_summarizes_the_callers_records(
+    api: TestClient, local_store: JsonRepository
+) -> None:
+    from head_hunter.schemas import FitReport, JobPosting, Profile, Role
+
+    local_store.save_profile(
+        Profile(user_id="alice-uid", roles=[Role(company="Acme", title="Engineer")])
+    )
+    local_store.save_job(
+        JobPosting(
+            id="job-a",
+            user_id="alice-uid",
+            source="paste",
+            company="Acme",
+            title="Engineer",
+            raw_text="the posting",
+        )
+    )
+    local_store.save_fit_report(
+        FitReport(user_id="alice-uid", job_id="job-a", score=77, summary="close")
+    )
+
+    body = api.get("/api/overview", headers=bearer("alice-token")).json()
+
+    assert body["profile"]["exists"] is True
+    assert body["profile"]["roles"] == 1
+    assert body["matching"]["jobs"] == 1
+    assert body["matching"]["average_score"] == 77
+    assert body["matching"]["best"]["company"] == "Acme"
+    assert body["matching"]["resumes"] == 0
 
 
 def test_the_graph_script_is_served(api: TestClient) -> None:
