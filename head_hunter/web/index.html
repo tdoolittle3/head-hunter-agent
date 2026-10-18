@@ -344,8 +344,11 @@
     return new Error(detail);
   }
 
-  async function send(text) {
-    const res = await fetch("/api/chat", {
+  // One turn, streamed: calls `handle` with each server-sent event as it
+  // arrives, so words appear while the agent is still writing them.
+  // EventSource cannot POST or carry the auth header, hence a fetch reader.
+  async function send(text, handle) {
+    const res = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + await idToken() },
       body: JSON.stringify({ message: text, session_id: sessionId }),
@@ -355,7 +358,22 @@
       throw new Error("That conversation could not be found. Send your message again to start a new one.");
     }
     if (!res.ok) throw await failure(res, "Something went wrong. Try again.");
-    return res.json();
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let end;
+      while ((end = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("data: ")) handle(JSON.parse(line.slice(6)));
+        }
+      }
+    }
   }
 
   async function uploadResume(file) {
@@ -383,17 +401,47 @@
   async function converse(text, shown) {
     setBusy(true);
     addMessage(shown || text, "me");
-    const waiting = addMessage("Thinking…", "note");
+    const status = addMessage("Thinking…", "note");
+    const pretty = (author) => author.replaceAll("_", " ");
+    let open = null;   // the message still receiving deltas
+    let spoke = false;
+
+    // Deltas build a message in place. The reply that follows is the same
+    // text finished, so it replaces the deltas rather than repeating them.
+    const ensureOpen = (author) => {
+      if (open && open.author === author) return open;
+      const el = addMessage("", "", pretty(author));
+      open = { author, node: el.lastChild };
+      $("log").appendChild(status);  // keep the status line below the words
+      return open;
+    };
+
+    const handle = (ev) => {
+      if (ev.type === "session") {
+        sessionId = ev.session_id;
+      } else if (ev.type === "agent") {
+        status.textContent = pretty(ev.author) + " is working…";
+      } else if (ev.type === "delta") {
+        ensureOpen(ev.author).node.data += ev.text;
+        spoke = true;
+      } else if (ev.type === "reply") {
+        ensureOpen(ev.author).node.data = ev.text;
+        open = null;
+        spoke = true;
+      } else if (ev.type === "error") {
+        addMessage(ev.detail, "err");
+        spoke = true;
+      }
+      $("log").scrollTop = $("log").scrollHeight;
+    };
+
     try {
-      const reply = await send(text);
-      sessionId = reply.session_id;
-      waiting.remove();
-      if (reply.replies.length === 0) addMessage("(No reply. Try rephrasing.)", "note");
-      for (const r of reply.replies) addMessage(r.text, "", r.author.replaceAll("_", " "));
+      await send(text, handle);
+      if (!spoke) addMessage("(No reply. Try rephrasing.)", "note");
     } catch (error) {
-      waiting.remove();
       addMessage(error.message, "err");
     } finally {
+      status.remove();
       setBusy(false);
     }
   }

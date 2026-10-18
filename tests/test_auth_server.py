@@ -8,6 +8,7 @@ the agent runs under is the one in the token and nothing a client can send.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -52,10 +53,13 @@ def fake_verifier(table: Mapping[str, Mapping[str, Any]]) -> auth.TokenVerifier:
 
 
 class FakeEvent:
-    """The two things the server reads from an ADK event."""
+    """The things the server reads from an ADK event."""
 
-    def __init__(self, author: str, text: str, final: bool = True) -> None:
+    def __init__(
+        self, author: str, text: str, final: bool = True, partial: bool = False
+    ) -> None:
         self.author = author
+        self.partial = partial
         self.content = SimpleNamespace(parts=[SimpleNamespace(text=text)])
         self._final = final
 
@@ -64,18 +68,37 @@ class FakeEvent:
 
 
 class FakeRunner:
-    """Records who the agent was run as, and replies with a fixed answer."""
+    """Records who the agent was run as, and replies with a fixed answer.
+
+    The reply arrives the way the real runner's does when the model streams:
+    pieces marked partial, then one finished event carrying the whole text.
+    """
 
     def __init__(self) -> None:
         self.session_service = InMemorySessionService()
         self.calls: list[dict[str, Any]] = []
         self.fail = False
 
-    async def run_async(self, *, user_id: str, session_id: str, new_message: Any):
-        self.calls.append({"user_id": user_id, "session_id": session_id})
+    async def run_async(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        new_message: Any,
+        run_config: Any = None,
+    ):
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "session_id": session_id,
+                "run_config": run_config,
+            }
+        )
         if self.fail:
             raise RuntimeError("secret internal detail /srv/secret")
         yield FakeEvent("head_hunter", "thinking...", final=False)
+        yield FakeEvent("head_hunter", "hello ", final=False, partial=True)
+        yield FakeEvent("head_hunter", user_id, final=False, partial=True)
         yield FakeEvent("head_hunter", f"hello {user_id}")
 
 
@@ -278,6 +301,119 @@ def test_empty_and_oversized_messages_are_refused(
         "/api/chat", json={"message": message}, headers=bearer("alice-token")
     )
     assert response.status_code == 422
+
+
+# The streaming endpoint -----------------------------------------------------
+
+
+def sse_payloads(body: str) -> list[dict[str, Any]]:
+    """The JSON payloads of a server-sent-event response, in order."""
+    prefix = "data: "
+    return [
+        json.loads(line[len(prefix) :])
+        for line in body.splitlines()
+        if line.startswith(prefix)
+    ]
+
+
+def test_stream_refuses_the_anonymous_and_never_runs_the_agent(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    anonymous = client.post("/api/chat/stream", json={"message": "hi"})
+    assert anonymous.status_code == 401
+    assert runner.calls == []
+
+
+def test_stream_delivers_deltas_then_the_finished_reply(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    response = client.post(
+        "/api/chat/stream", json={"message": "hi"}, headers=bearer("bob-token")
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = sse_payloads(response.text)
+    assert events[0]["type"] == "session"
+    assert events[0]["session_id"]
+    assert {"type": "agent", "author": "head_hunter"} in events
+    deltas = [e["text"] for e in events if e["type"] == "delta"]
+    assert "".join(deltas) == "hello bob-uid"
+    # The reply carries the whole answer again, so a client can replace its
+    # accumulated deltas with the text the non-streaming endpoint would return.
+    assert {"type": "reply", "author": "head_hunter", "text": "hello bob-uid"} in events
+    assert events[-1] == {"type": "done"}
+    assert runner.calls[0]["user_id"] == "bob-uid"
+
+
+def test_stream_asks_the_model_to_stream(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    from google.adk.agents.run_config import StreamingMode
+
+    client.post(
+        "/api/chat/stream", json={"message": "hi"}, headers=bearer("alice-token")
+    )
+
+    run_config = runner.calls[0]["run_config"]
+    assert run_config is not None
+    assert run_config.streaming_mode is StreamingMode.SSE
+
+
+def test_stream_guards_conversations_like_chat_does(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    first = sse_payloads(
+        client.post(
+            "/api/chat/stream", json={"message": "hi"}, headers=bearer("alice-token")
+        ).text
+    )
+    session_id = first[0]["session_id"]
+
+    again = client.post(
+        "/api/chat/stream",
+        json={"message": "more", "session_id": session_id},
+        headers=bearer("alice-token"),
+    )
+    assert sse_payloads(again.text)[0]["session_id"] == session_id
+
+    runner.calls.clear()
+    stolen = client.post(
+        "/api/chat/stream",
+        json={"message": "hi", "session_id": session_id},
+        headers=bearer("bob-token"),
+    )
+    assert stolen.status_code == 404
+    assert runner.calls == []
+
+
+def test_a_mid_stream_failure_is_an_event_and_does_not_leak(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    runner.fail = True
+    response = client.post(
+        "/api/chat/stream", json={"message": "hi"}, headers=bearer("alice-token")
+    )
+
+    # The 200 and the session event are already out when the agent fails, so
+    # the failure arrives as the last event rather than as a status code.
+    assert response.status_code == 200
+    assert sse_payloads(response.text)[-1]["type"] == "error"
+    assert "secret" not in response.text
+
+
+def test_stream_counts_against_the_same_message_limit(runner: FakeRunner) -> None:
+    client = limited_client(runner, limit=1)
+    ok = client.post(
+        "/api/chat/stream", json={"message": "hi"}, headers=bearer("alice-token")
+    )
+    assert ok.status_code == 200
+
+    over = client.post(
+        "/api/chat/stream", json={"message": "hi"}, headers=bearer("alice-token")
+    )
+    assert over.status_code == 429
+    assert len(runner.calls) == 1
 
 
 # Refusing to start unsafely -----------------------------------------------
