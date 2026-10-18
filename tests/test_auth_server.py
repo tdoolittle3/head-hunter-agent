@@ -475,6 +475,27 @@ def test_the_page_is_given_its_firebase_settings(client: TestClient) -> None:
     assert client.get("/firebase-config.json").json() == WEB_CONFIG
 
 
+def test_link_previews_get_absolute_https_urls(client: TestClient) -> None:
+    """Social scrapers refuse relative image URLs, and Cloud Run is https."""
+    text = client.get("/").text
+    assert "__BASE__" not in text
+    assert 'content="https://testserver/og.png"' in text
+
+
+def test_the_brand_assets_are_served(client: TestClient) -> None:
+    for name, kind in [
+        ("favicon.svg", "image/svg+xml"),
+        ("apple-touch-icon.png", "image/png"),
+        ("icon-192.png", "image/png"),
+        ("icon-512.png", "image/png"),
+        ("og.png", "image/png"),
+        ("site.webmanifest", "application/manifest+json"),
+    ]:
+        response = client.get(f"/{name}")
+        assert response.status_code == 200, name
+        assert response.headers["content-type"].startswith(kind), name
+
+
 def test_a_page_signing_into_another_project_is_caught_at_startup(
     runner: FakeRunner,
 ) -> None:
