@@ -106,8 +106,11 @@
   textarea::placeholder { color: var(--dim); }
   #fatal { padding: 40px 0; color: var(--ember); }
 
-  /* Funnel page and graph */
-  #funnel { padding: 28px 0 48px; }
+  /* Profile page and the funnel graph on it */
+  #profile { padding: 24px 0 48px; }
+  #profile .eyebrow { margin: 32px 0 0; }
+  #profile .eyebrow:first-of-type { margin-top: 0; }
+  .ov-note { color: var(--dim); font-size: 13px; margin: 14px 0 0; max-width: 62ch; }
   .fn-stage { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 18px 8px 8px; overflow-x: auto; }
   .fn-stage svg { display: block; min-width: 760px; width: 100%; height: auto; }
@@ -151,7 +154,7 @@
     </div>
     <nav class="tabs" id="tabs" aria-label="Views" hidden>
       <button id="tab-chat" aria-pressed="true">Chat</button>
-      <button id="tab-funnel" aria-pressed="false">Funnel</button>
+      <button id="tab-profile" aria-pressed="false">Profile</button>
     </nav>
     <span class="who" id="who"></span>
     <button id="new" hidden>New conversation</button>
@@ -251,9 +254,21 @@
     </form>
   </section>
 
-  <section id="funnel" class="wrap" hidden>
-    <div id="fn-error" role="alert" style="color:var(--ember);margin-bottom:12px" hidden></div>
-    <div class="fn-stage">
+  <section id="profile" class="wrap" hidden>
+    <div id="ov-error" role="alert" style="color:var(--ember);margin-bottom:12px" hidden></div>
+
+    <div class="eyebrow">Career profile</div>
+    <p class="ov-note" id="ov-profile-note" hidden>No profile yet. Say hello in the chat
+      and the Interviewer will start building it from your own words.</p>
+    <div class="fn-stats" id="ov-profile"></div>
+
+    <div class="eyebrow">Job matching</div>
+    <p class="ov-note" id="ov-match-note" hidden>Paste a job description in the chat to
+      save a posting and get your first fit report.</p>
+    <div class="fn-stats" id="ov-matching"></div>
+
+    <div class="eyebrow">Applications</div>
+    <div class="fn-stage" style="margin-top:16px">
       <div id="fn-empty" hidden>
         <h2>No applications yet</h2>
         <p>Tell the Coach in the chat when you apply, hear back, interview or get an
@@ -503,33 +518,61 @@
 
   let view = "chat";
 
-  async function loadFunnel() {
-    show("fn-error", false);
+  function statCard(container, label, value, note) {
+    const card = document.createElement("div");
+    card.className = "fn-stat";
+    for (const [tag, text] of [["span", label], ["strong", value], ["small", note]]) {
+      const el = document.createElement(tag);
+      el.textContent = text;
+      card.appendChild(el);
+    }
+    container.appendChild(card);
+  }
+
+  async function loadOverview() {
+    show("ov-error", false);
     try {
-      const res = await fetch("/api/funnel", {
+      const res = await fetch("/api/overview", {
         headers: { Authorization: "Bearer " + await idToken() },
       });
-      if (!res.ok) throw await failure(res, "Could not load your applications.");
+      if (!res.ok) throw await failure(res, "Could not load your overview.");
       const data = await res.json();
-      const empty = data.total === 0;
+
+      const p = data.profile;
+      $("ov-profile").replaceChildren();
+      show("ov-profile-note", !p.exists);
+      if (p.exists) {
+        statCard($("ov-profile"), "Roles", String(p.roles), "jobs on record");
+        statCard($("ov-profile"), "Accomplishments", String(p.accomplishments), "with evidence");
+        statCard($("ov-profile"), "Skills", String(p.skills), "confirmed");
+        statCard($("ov-profile"), "Open questions", String(p.open_questions), "still to answer");
+      }
+
+      const m = data.matching;
+      $("ov-matching").replaceChildren();
+      show("ov-match-note", m.jobs === 0);
+      if (m.jobs > 0) {
+        statCard($("ov-matching"), "Postings", String(m.jobs), "saved");
+        statCard($("ov-matching"), "Average fit", m.average_score == null ? "—" : String(m.average_score),
+          m.fit_reports === 1 ? "1 posting scored" : m.fit_reports + " postings scored");
+        statCard($("ov-matching"), "Best fit", m.best ? String(m.best.score) : "—",
+          m.best ? [m.best.title, m.best.company].filter(Boolean).join(" · ") || "top match" : "nothing scored yet");
+        statCard($("ov-matching"), "Resumes", String(m.resumes), "tailored and checked");
+      }
+
+      const funnel = data.funnel;
+      const empty = funnel.total === 0;
       show("fn-empty", empty);
       show("fn-svg", !empty);
       $("fn-stats").replaceChildren();
       if (empty) { $("fn-svg").replaceChildren(); return; }
-      HHFunnel.render($("fn-svg"), data);
-      for (const [label, value, note] of HHFunnel.stats(data)) {
-        const card = document.createElement("div");
-        card.className = "fn-stat";
-        for (const [tag, text] of [["span", label], ["strong", value], ["small", note]]) {
-          const el = document.createElement(tag);
-          el.textContent = text;
-          card.appendChild(el);
-        }
-        $("fn-stats").appendChild(card);
+      HHFunnel.render($("fn-svg"), funnel);
+      for (const [label, value, note] of HHFunnel.stats(funnel)) {
+        statCard($("fn-stats"), label, value, note);
       }
     } catch (error) {
-      $("fn-error").textContent = error.message;
-      show("fn-error", true);
+      $("ov-error").textContent = error.message;
+      show("ov-error", true);
     }
   }
 
@@ -540,14 +583,14 @@
     show("tabs", !!user);
     show("out", !!user);
     show("app", !!user && view === "chat");
-    show("funnel", !!user && view === "funnel");
+    show("profile", !!user && view === "profile");
     show("new", !!user && view === "chat");
     $("tab-chat").setAttribute("aria-pressed", String(view === "chat"));
-    $("tab-funnel").setAttribute("aria-pressed", String(view === "funnel"));
+    $("tab-profile").setAttribute("aria-pressed", String(view === "profile"));
   }
 
   $("tab-chat").addEventListener("click", () => { view = "chat"; layout(); $("box").focus(); });
-  $("tab-funnel").addEventListener("click", () => { view = "funnel"; layout(); loadFunnel(); });
+  $("tab-profile").addEventListener("click", () => { view = "profile"; layout(); loadOverview(); });
   $("fn-replay").addEventListener("click", () => HHFunnel.replay($("fn-svg")));
 
   try {

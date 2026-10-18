@@ -45,7 +45,7 @@ from head_hunter.doc_text import (
     display_name,
     extract_text,
 )
-from head_hunter.funnel import Funnel, compute_funnel
+from head_hunter.overview import Overview, compute_overview
 from head_hunter.ratelimit import RateLimiter
 from head_hunter.schemas import UploadedDocument
 from head_hunter.storage import Repository, StorageError
@@ -256,17 +256,28 @@ def create_app(
     ) -> dict[str, str | None]:
         return {"uid": user.uid, "email": user.email, "name": user.name}
 
-    @api.get("/api/funnel", response_model=Funnel)
-    def funnel(user: Annotated[VerifiedUser, Depends(current_user)]) -> Funnel:
-        """Counts for the application funnel graph, from the caller's own journal."""
+    @api.get("/api/overview", response_model=Overview)
+    def overview(user: Annotated[VerifiedUser, Depends(current_user)]) -> Overview:
+        """Everything the Profile page shows, from the caller's own records."""
         try:
-            entries = open_repository().list_journal_entries(user.uid)
+            repo = open_repository()
+            profile = repo.get_profile(user.uid)
+            jobs = repo.list_jobs(user.uid)
+            reports = [
+                report
+                for job in jobs
+                if (report := repo.get_fit_report(user.uid, job.id)) is not None
+            ]
+            resumes = sum(
+                1 for job in jobs if repo.get_resume(user.uid, job.id) is not None
+            )
+            entries = repo.list_journal_entries(user.uid)
         except StorageError:
-            logger.exception("Could not read the journal for %s", user.uid)
+            logger.exception("Could not read the overview for %s", user.uid)
             raise HTTPException(
-                status_code=500, detail="Could not load your applications. Try again."
+                status_code=500, detail="Could not load your overview. Try again."
             ) from None
-        return compute_funnel(entries)
+        return compute_overview(profile, jobs, reports, resumes, entries)
 
     @api.post("/api/upload", response_model=UploadResponse)
     def upload(
