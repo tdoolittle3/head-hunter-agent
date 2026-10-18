@@ -68,7 +68,8 @@ flowchart TD
 | **2 – Resume** | Resume Tailor, traceability validator, Markdown + DOCX output, eval cases | ✅ |
 | **3 – Connectors & deploy** | Gmail Inbox Scout, one job-board API, Firestore, Cloud Run | Firestore + Cloud Run done; connectors pending |
 | **4 – Coach** | Application tracker, interview debriefs, pattern reflection | Tracker and funnel graph done; debrief patterns pending |
-| **Later** | Auth and multi-user, billing, web UI | |
+| **5 – Pro** | Job sweep (watchlists + board APIs), Stripe billing, pricing tiers. The plan: [docs/PRO.md](docs/PRO.md) | Planned |
+| **Later** | Gmail Inbox Scout and calendar OAuth, recruiter side | |
 
 ## Running it
 
