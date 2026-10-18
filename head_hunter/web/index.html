@@ -138,6 +138,26 @@
     color: var(--cyan); margin-bottom: 4px; }
   .msg.note { color: var(--dim); background: none; border: none; padding: 0 4px; font-size: 13px; }
   .msg.err { color: var(--ember); background: none; border-color: var(--ember); }
+
+  /* A finished reply is rendered Markdown; streaming drafts stay plain text. */
+  .msg.md { white-space: normal; }
+  .msg.md p, .msg.md ul, .msg.md ol, .msg.md pre, .msg.md blockquote, .msg.md table { margin: 0 0 10px; }
+  .msg.md > :last-child { margin-bottom: 0; }
+  .msg.md h1, .msg.md h2, .msg.md h3, .msg.md h4 { margin: 14px 0 6px; font: 700 15px/1.3 var(--display); letter-spacing: -.01em; }
+  .msg.md > h1:first-of-type, .msg.md > h2:first-of-type { margin-top: 4px; }
+  .msg.md h1 { font-size: 17px; }
+  .msg.md h2 { font-size: 16px; }
+  .msg.md ul, .msg.md ol { padding-left: 22px; }
+  .msg.md li { margin: 3px 0; }
+  .msg.md code { background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 12.5px; }
+  .msg.md pre { background: var(--raise); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; overflow-x: auto; }
+  .msg.md pre code { background: none; border: 0; padding: 0; }
+  .msg.md blockquote { border-left: 2px solid var(--cyan); padding: 2px 12px; color: var(--dim); }
+  .msg.md a { color: var(--cyan); }
+  .msg.md table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+  .msg.md th, .msg.md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  .msg.md th { color: var(--cyan); font-weight: 500; background: var(--raise); }
+  .msg.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
   #form { display: flex; gap: 8px; padding: 12px 0 max(20px, env(safe-area-inset-bottom, 0px));
     align-items: flex-end; border-top: 1px solid var(--line); }
   /* 46px lines everything up and clears the 44px touch-target floor; 16px text
@@ -426,6 +446,7 @@
 </main>
 
 <script src="/funnel.js"></script>
+<script src="/markdown.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
   import {
@@ -577,7 +598,13 @@
         ensureOpen(ev.author).node.data += ev.text;
         spoke = true;
       } else if (ev.type === "reply") {
-        ensureOpen(ev.author).node.data = ev.text;
+        // The reply is the streamed draft finished, so it takes the draft's
+        // place -- rendered, since agents write Markdown.
+        const slot = ensureOpen(ev.author);
+        const bubble = slot.node.parentNode;
+        slot.node.remove();
+        bubble.classList.add("md");
+        bubble.appendChild(HHMarkdown.render(ev.text));
         open = null;
         spoke = true;
       } else if (ev.type === "error") {
