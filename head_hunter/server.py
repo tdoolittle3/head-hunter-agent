@@ -269,13 +269,17 @@ def create_app(
             headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"},
         )
 
-    @api.get("/funnel.js", include_in_schema=False)
-    def funnel_script() -> FileResponse:
-        return FileResponse(
-            WEB_DIR / "funnel.js",
-            media_type="text/javascript",
-            headers={"Cache-Control": "no-store"},
-        )
+    def serve_script(name: str) -> None:
+        @api.get(f"/{name}", include_in_schema=False)
+        def script() -> FileResponse:
+            return FileResponse(
+                WEB_DIR / name,
+                media_type="text/javascript",
+                headers={"Cache-Control": "no-store"},
+            )
+
+    for name in ("funnel.js", "markdown.js"):
+        serve_script(name)
 
     def serve_asset(name: str, media_type: str) -> None:
         @api.get(f"/{name}", include_in_schema=False)

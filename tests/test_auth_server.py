@@ -471,6 +471,16 @@ def test_the_page_never_puts_agent_text_into_html(client: TestClient) -> None:
     assert "innerHTML" not in client.get("/").text
 
 
+def test_the_markdown_renderer_is_served_and_builds_dom_only(
+    client: TestClient,
+) -> None:
+    """Replies render as Markdown, but never through an HTML parser."""
+    response = client.get("/markdown.js")
+    assert response.status_code == 200
+    assert "HHMarkdown" in response.text
+    assert "innerHTML" not in response.text
+
+
 def test_the_page_is_given_its_firebase_settings(client: TestClient) -> None:
     assert client.get("/firebase-config.json").json() == WEB_CONFIG
 
