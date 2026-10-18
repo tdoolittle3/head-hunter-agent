@@ -19,14 +19,15 @@ Run it with ``make serve``. Which Firebase project to trust comes from
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
-from google.adk.sessions import BaseSessionService, InMemorySessionService
+from google.adk.sessions import BaseSessionService, InMemorySessionService, Session
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -140,12 +141,23 @@ def _build_runner() -> Runner:
     return Runner(app=agent_app, session_service=_build_session_service())
 
 
+def _sse(payload: dict[str, Any]) -> str:
+    """One server-sent event carrying a JSON payload."""
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _event_text(event: Any) -> str:
+    if not event.content:
+        return ""
+    return "".join(p.text for p in event.content.parts or [] if p.text)
+
+
 def _final_replies(events: list[Any]) -> list[Reply]:
     replies = []
     for event in events:
-        if not event.is_final_response() or not event.content:
+        if not event.is_final_response():
             continue
-        text = "".join(p.text for p in event.content.parts or [] if p.text)
+        text = _event_text(event)
         if text.strip():
             replies.append(Reply(author=event.author, text=text))
     return replies
@@ -313,11 +325,8 @@ def create_app(
             pages=record.pages,
         )
 
-    @api.post("/api/chat", response_model=ChatResponse)
-    async def chat(
-        body: ChatRequest, user: Annotated[VerifiedUser, Depends(current_user)]
-    ) -> ChatResponse:
-        wait = limiter.check(user.uid)
+    def check_message_limit(uid: str) -> None:
+        wait = limiter.check(uid)
         if wait > 0:
             seconds = max(1, round(wait))
             raise HTTPException(
@@ -326,17 +335,25 @@ def create_app(
                 headers={"Retry-After": str(seconds)},
             )
 
+    async def open_session(uid: str, session_id: str | None) -> Session:
         sessions = runner.session_service
-        if body.session_id is None:
-            session = await sessions.create_session(app_name=APP_NAME, user_id=user.uid)
-        else:
-            # Looked up under the caller's own uid, so someone else's session
-            # id is indistinguishable from one that does not exist.
-            session = await sessions.get_session(
-                app_name=APP_NAME, user_id=user.uid, session_id=body.session_id
-            )
-            if session is None:
-                raise HTTPException(status_code=404, detail="No such conversation.")
+        if session_id is None:
+            return await sessions.create_session(app_name=APP_NAME, user_id=uid)
+        # Looked up under the caller's own uid, so someone else's session
+        # id is indistinguishable from one that does not exist.
+        session = await sessions.get_session(
+            app_name=APP_NAME, user_id=uid, session_id=session_id
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="No such conversation.")
+        return session
+
+    @api.post("/api/chat", response_model=ChatResponse)
+    async def chat(
+        body: ChatRequest, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> ChatResponse:
+        check_message_limit(user.uid)
+        session = await open_session(user.uid, body.session_id)
 
         message = types.Content(role="user", parts=[types.Part(text=body.message)])
         try:
@@ -354,5 +371,64 @@ def create_app(
                 status_code=500, detail="The agent hit an error. Try again."
             ) from None
         return ChatResponse(session_id=session.id, replies=_final_replies(events))
+
+    @api.post("/api/chat/stream")
+    async def chat_stream(
+        body: ChatRequest, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> StreamingResponse:
+        """The same turn as ``/api/chat``, delivered as it happens.
+
+        Server-sent events, one JSON payload each:
+        ``session`` (always first), ``agent`` (a specialist started working),
+        ``delta`` (a piece of text as the model writes it), ``reply`` (one
+        agent's finished answer -- replaces that agent's deltas, which are
+        drafts of it), ``error``, and ``done``.
+        """
+        check_message_limit(user.uid)
+        session = await open_session(user.uid, body.session_id)
+        message = types.Content(role="user", parts=[types.Part(text=body.message)])
+
+        async def events() -> AsyncIterator[str]:
+            yield _sse({"type": "session", "session_id": session.id})
+            author = None
+            try:
+                async for event in runner.run_async(
+                    user_id=user.uid,
+                    session_id=session.id,
+                    new_message=message,
+                    run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+                ):
+                    # Tool-call events carry no text but do carry the author,
+                    # so a handoff shows up here before any words arrive.
+                    if event.author and event.author != author:
+                        author = event.author
+                        yield _sse({"type": "agent", "author": author})
+                    text = _event_text(event)
+                    if not text:
+                        continue
+                    if event.partial:
+                        yield _sse(
+                            {"type": "delta", "author": event.author, "text": text}
+                        )
+                    elif event.is_final_response() and text.strip():
+                        yield _sse(
+                            {"type": "reply", "author": event.author, "text": text}
+                        )
+            except Exception:
+                # Too late for an HTTP status -- the 200 and part of the body
+                # are already out -- so the error is itself an event. The
+                # detail still goes only to the log.
+                logger.exception("Agent run failed for session %s", session.id)
+                yield _sse(
+                    {"type": "error", "detail": "The agent hit an error. Try again."}
+                )
+                return
+            yield _sse({"type": "done"})
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     return api
