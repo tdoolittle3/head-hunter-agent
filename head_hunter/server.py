@@ -19,12 +19,19 @@ Run it with ``make serve``. Which Firebase project to trust comes from
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService, Session
@@ -45,9 +52,16 @@ from head_hunter.doc_text import (
     display_name,
     extract_text,
 )
+from head_hunter.job_views import (
+    JobDetail,
+    JobSummary,
+    build_job_detail,
+    summarize_jobs,
+)
 from head_hunter.overview import Overview, compute_overview
 from head_hunter.ratelimit import RateLimiter
-from head_hunter.schemas import UploadedDocument
+from head_hunter.resume_render import MarkdownRenderError, render_docx, render_markdown
+from head_hunter.schemas import JobPosting, UploadedDocument
 from head_hunter.storage import Repository, StorageError
 from head_hunter.tools._base import repository as default_repository
 
@@ -139,6 +153,18 @@ def _build_runner() -> Runner:
     from head_hunter.agent import app as agent_app
 
     return Runner(app=agent_app, session_service=_build_session_service())
+
+
+def _resume_filename(job: JobPosting, suffix: str) -> str:
+    """A download name people can tell apart in a folder of resumes."""
+    base = " ".join(part for part in (job.company, job.title) if part) or job.id
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", base).strip("-").lower() or "resume"
+    return f"resume-{slug}.{suffix}"
+
+
+DOCX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
 
 
 def _sse(payload: dict[str, Any]) -> str:
@@ -278,6 +304,101 @@ def create_app(
                 status_code=500, detail="Could not load your overview. Try again."
             ) from None
         return compute_overview(profile, jobs, reports, resumes, entries)
+
+    @api.get("/api/jobs", response_model=list[JobSummary])
+    def jobs(user: Annotated[VerifiedUser, Depends(current_user)]) -> list[JobSummary]:
+        """The caller's saved postings, each with its fit score if analysed."""
+        try:
+            repo = open_repository()
+            saved = repo.list_jobs(user.uid)
+            reports = {job.id: repo.get_fit_report(user.uid, job.id) for job in saved}
+            with_resumes = {
+                job.id for job in saved if repo.get_resume(user.uid, job.id) is not None
+            }
+        except StorageError:
+            logger.exception("Could not list jobs for %s", user.uid)
+            raise HTTPException(
+                status_code=500, detail="Could not load your jobs. Try again."
+            ) from None
+        return summarize_jobs(saved, reports, with_resumes)
+
+    @api.get("/api/jobs/{job_id}", response_model=JobDetail)
+    def job_detail(
+        job_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> JobDetail:
+        """One posting with its fit report, the cited evidence quoted in full."""
+        try:
+            repo = open_repository()
+            job = repo.get_job(user.uid, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="No such job.")
+            report = repo.get_fit_report(user.uid, job_id)
+            profile = repo.get_profile(user.uid)
+            has_resume = repo.get_resume(user.uid, job_id) is not None
+        except StorageError:
+            logger.exception("Could not load job %s for %s", job_id, user.uid)
+            raise HTTPException(
+                status_code=500, detail="Could not load that job. Try again."
+            ) from None
+        return build_job_detail(job, report, profile, has_resume)
+
+    def rendered_resume(user_id: str, job_id: str) -> tuple[JobPosting, str]:
+        """The resume for one job as Markdown, or the HTTP error saying why not."""
+        try:
+            repo = open_repository()
+            job = repo.get_job(user_id, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="No such job.")
+            resume = repo.get_resume(user_id, job_id)
+            profile = repo.get_profile(user_id)
+        except StorageError:
+            logger.exception("Could not load the resume for job %s", job_id)
+            raise HTTPException(
+                status_code=500, detail="Could not load that resume. Try again."
+            ) from None
+        if resume is None or profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No resume for this job yet. Ask for one in the chat.",
+            )
+        return job, render_markdown(resume, profile)
+
+    @api.get("/api/jobs/{job_id}/resume.md")
+    def resume_markdown(
+        job_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> PlainTextResponse:
+        job, markdown = rendered_resume(user.uid, job_id)
+        return PlainTextResponse(
+            markdown,
+            media_type="text/markdown",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{_resume_filename(job, "md")}"'
+                )
+            },
+        )
+
+    @api.get("/api/jobs/{job_id}/resume.docx")
+    def resume_document(
+        job_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> Response:
+        job, markdown = rendered_resume(user.uid, job_id)
+        try:
+            content = render_docx(markdown)
+        except MarkdownRenderError:
+            logger.exception("Could not render the resume for job %s", job_id)
+            raise HTTPException(
+                status_code=500, detail="Could not render the resume file."
+            ) from None
+        return Response(
+            content,
+            media_type=DOCX_MEDIA_TYPE,
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{_resume_filename(job, "docx")}"'
+                )
+            },
+        )
 
     @api.post("/api/upload", response_model=UploadResponse)
     def upload(

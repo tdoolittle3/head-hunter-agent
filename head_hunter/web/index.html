@@ -130,9 +130,53 @@
   textarea::placeholder { color: var(--dim); }
   @media (max-width: 640px) {
     header .wrap { gap: 8px; }
+    .brand span { display: none; }  /* three tabs need the room; the mark stays */
     .tabs button { padding: 9px 10px; }
     .msg { max-width: 92%; }
   }
+
+  /* Jobs list */
+  #jobs { padding: 24px 0 48px; }
+  .jb-empty { padding: 56px 24px; text-align: center; color: var(--dim);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .jb-empty h2 { margin: 0 0 8px; font-size: 22px; }
+  .jb-row { display: flex; width: 100%; align-items: center; gap: 14px; text-align: left;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; margin-top: 10px; text-transform: none; letter-spacing: 0; }
+  .jb-row:hover { border-color: var(--cyan); color: inherit; }
+  .jb-main { flex: 1; min-width: 0; }
+  .jb-title { display: block; font: 500 15px/1.3 var(--display); letter-spacing: -.01em; }
+  .jb-meta { display: block; color: var(--dim); font-size: 12px; margin-top: 5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score { flex: none; font: 500 19px var(--display); min-width: 56px; text-align: center;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+    font-variant-numeric: tabular-nums; }
+  .score.hi { color: var(--mint); border-color: rgba(52, 240, 168, .45); }
+  .score.mid { color: var(--gold); border-color: rgba(255, 200, 61, .45); }
+  .score.low { color: var(--ember); border-color: rgba(255, 86, 54, .45); }
+  .score.none { color: var(--dim); }
+
+  /* One job: the fit report, with the evidence quoted */
+  .jb-back { margin-bottom: 18px; }
+  #jb-detail h2 { margin: 6px 0 0; }
+  #jb-detail .jb-meta { white-space: normal; }
+  .jb-band { display: flex; gap: 16px; align-items: center; margin-top: 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+  .jb-band .score { font-size: 26px; min-width: 64px; }
+  .jb-summary { margin: 0; color: var(--dim); font-size: 13px; }
+  #jb-detail .eyebrow { margin: 30px 0 4px; }
+  .req { border-top: 1px solid var(--line); padding: 14px 0 10px; }
+  .req h3 { margin: 0; font: 500 14px/1.5 var(--mono); color: var(--text); }
+  .req .note { margin: 6px 0 0; color: var(--dim); font-size: 13px; }
+  .quote { border-left: 2px solid var(--cyan); margin: 10px 0 0; padding: 4px 12px;
+    color: var(--dim); font-size: 13px; font-style: italic; overflow-wrap: anywhere; }
+  .gaptag { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 2px 8px;
+    border-radius: 2px; font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  .gaptag.stretch { background: var(--gold); color: var(--ink); }
+  .gaptag.blocker { background: var(--ember); color: var(--ink); }
+  .gaptag.preferred { background: var(--line); color: var(--dim); }
+  .gaptag.required { background: var(--raise); color: var(--cyan); border: 1px solid var(--line); }
+  .jb-downloads { display: flex; gap: 10px; align-items: center; margin-top: 28px; flex-wrap: wrap; }
   #fatal { padding: 40px 0; color: var(--ember); }
 
   /* Profile page and the funnel graph on it */
@@ -183,6 +227,7 @@
     </div>
     <nav class="tabs" id="tabs" aria-label="Views" hidden>
       <button id="tab-chat" aria-pressed="true">Chat</button>
+      <button id="tab-jobs" aria-pressed="false">Jobs</button>
       <button id="tab-profile" aria-pressed="false">Profile</button>
     </nav>
     <button class="icon-btn" id="new" hidden aria-label="New chat" title="New chat">
@@ -305,6 +350,12 @@
         placeholder="Say hello, paste a job description, or upload your resume"></textarea>
       <button class="primary" id="send" type="submit">Send</button>
     </form>
+  </section>
+
+  <section id="jobs" class="wrap" hidden>
+    <div id="jb-error" role="alert" style="color:var(--ember);margin-bottom:12px" hidden></div>
+    <div id="jb-list"></div>
+    <div id="jb-detail" hidden></div>
   </section>
 
   <section id="profile" class="wrap" hidden>
@@ -621,6 +672,154 @@
 
   let view = "chat";
 
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  async function authedJson(path, fallback) {
+    const res = await fetch(path, { headers: { Authorization: "Bearer " + await idToken() } });
+    if (!res.ok) throw await failure(res, fallback);
+    return res.json();
+  }
+
+  // Jobs ---------------------------------------------------------------
+
+  function jbError(error) {
+    $("jb-error").textContent = error.message;
+    show("jb-error", true);
+  }
+
+  function scoreChip(score) {
+    const cls = score == null ? "none" : score >= 75 ? "hi" : score >= 50 ? "mid" : "low";
+    return el("span", "score " + cls, score == null ? "—" : String(score));
+  }
+
+  function metaLine(d) {
+    return [d.company, d.location, d.remote, d.comp].filter(Boolean).join(" · ");
+  }
+
+  async function loadJobs() {
+    show("jb-error", false);
+    show("jb-detail", false);
+    show("jb-list", true);
+    try {
+      renderJobs(await authedJson("/api/jobs", "Could not load your jobs."));
+    } catch (error) {
+      jbError(error);
+    }
+  }
+
+  function renderJobs(rows) {
+    const list = $("jb-list");
+    list.replaceChildren();
+    if (!rows.length) {
+      const empty = el("div", "jb-empty");
+      empty.appendChild(el("h2", null, "No postings yet"));
+      empty.appendChild(el("p", null,
+        "Paste a job description into the chat. It lands here with a fit score."));
+      list.appendChild(empty);
+      return;
+    }
+    for (const row of rows) {
+      const btn = el("button", "jb-row");
+      const main = el("span", "jb-main");
+      main.appendChild(el("span", "jb-title", row.title || "Untitled role"));
+      main.appendChild(el("span", "jb-meta", metaLine(row) || "details pending"));
+      btn.appendChild(main);
+      btn.appendChild(scoreChip(row.score));
+      btn.addEventListener("click", () => openJob(row.job_id));
+      list.appendChild(btn);
+    }
+  }
+
+  async function openJob(jobId) {
+    show("jb-error", false);
+    try {
+      const d = await authedJson("/api/jobs/" + encodeURIComponent(jobId),
+        "Could not load that job.");
+      renderJob(d);
+      show("jb-list", false);
+      show("jb-detail", true);
+      window.scrollTo(0, 0);
+    } catch (error) {
+      jbError(error);
+    }
+  }
+
+  async function download(path) {
+    const res = await fetch(path, { headers: { Authorization: "Bearer " + await idToken() } });
+    if (!res.ok) throw await failure(res, "Could not download the file.");
+    const match = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = match ? match[1] : "resume";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function requirementBlock(item, tag) {
+    const req = el("div", "req");
+    const head = el("h3", null, item.requirement);
+    head.appendChild(el("span", "gaptag " + tag, tag));
+    req.appendChild(head);
+    if (item.note) req.appendChild(el("p", "note", item.note));
+    for (const quote of item.evidence || []) {
+      req.appendChild(el("blockquote", "quote", "“" + quote.text + "”"));
+    }
+    return req;
+  }
+
+  function renderJob(d) {
+    const box = $("jb-detail");
+    box.replaceChildren();
+
+    const back = el("button", "jb-back", "← All jobs");
+    back.addEventListener("click", loadJobs);
+    box.appendChild(back);
+
+    box.appendChild(el("h2", null, d.title || "Untitled role"));
+    const meta = metaLine(d);
+    if (meta) box.appendChild(el("p", "jb-meta", meta));
+
+    const band = el("div", "jb-band");
+    band.appendChild(scoreChip(d.score));
+    band.appendChild(el("p", "jb-summary", d.summary
+      || "Not analysed yet. Ask for a fit analysis in the chat."));
+    box.appendChild(band);
+
+    if (d.met.length) {
+      box.appendChild(el("div", "eyebrow", "What you meet"));
+      for (const item of d.met) box.appendChild(requirementBlock(item, item.kind));
+    }
+    if (d.unmet.length) {
+      box.appendChild(el("div", "eyebrow", "Gaps"));
+      for (const item of d.unmet) box.appendChild(requirementBlock(item, item.gap));
+    }
+
+    const downloads = el("div", "jb-downloads");
+    if (d.has_resume) {
+      const base = "/api/jobs/" + encodeURIComponent(d.job_id) + "/resume.";
+      const docx = el("button", "primary", "Download resume (Word)");
+      docx.addEventListener("click", () => download(base + "docx").catch(jbError));
+      const md = el("button", null, "Markdown");
+      md.addEventListener("click", () => download(base + "md").catch(jbError));
+      downloads.appendChild(docx);
+      downloads.appendChild(md);
+    } else {
+      downloads.appendChild(el("p", "ov-note",
+        "No tailored resume yet — ask for one in the chat."));
+    }
+    box.appendChild(downloads);
+  }
+
+  // Profile ------------------------------------------------------------
+
   function statCard(container, label, value, note) {
     const card = document.createElement("div");
     card.className = "fn-stat";
@@ -686,14 +885,17 @@
     show("tabs", !!user);
     show("menu-wrap", !!user);
     show("app", !!user && view === "chat");
+    show("jobs", !!user && view === "jobs");
     show("profile", !!user && view === "profile");
     show("account", !!user && view === "account");
     show("new", !!user && view === "chat");
     $("tab-chat").setAttribute("aria-pressed", String(view === "chat"));
+    $("tab-jobs").setAttribute("aria-pressed", String(view === "jobs"));
     $("tab-profile").setAttribute("aria-pressed", String(view === "profile"));
   }
 
   $("tab-chat").addEventListener("click", () => { view = "chat"; layout(); $("box").focus(); });
+  $("tab-jobs").addEventListener("click", () => { view = "jobs"; layout(); loadJobs(); });
   $("tab-profile").addEventListener("click", () => { view = "profile"; layout(); loadOverview(); });
   $("fn-replay").addEventListener("click", () => HHFunnel.replay($("fn-svg")));
 
