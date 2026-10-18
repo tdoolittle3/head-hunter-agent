@@ -94,6 +94,42 @@ price id. Stripe test mode until the end-to-end flow is proven.
 (Stripe makes a 7-day trial one checkbox later), invoicing, tax handling
 beyond Stripe's defaults.
 
+## Bring your own model (MCP)
+
+Some people live in Claude or ChatGPT all day and will never open our web UI.
+For them, Head Hunter becomes a **connector**: an MCP server on the same Cloud
+Run service, so their own frontier model talks to their profile, jobs and
+journal directly. The web UI stays one client among several; both doors hit
+the same Firestore records and the same rules.
+
+**Tools, at two levels:**
+
+- *Data tools* — `get_profile`, `list_jobs`, `get_fit_report`,
+  `save_job_posting`, `log_application_event`. Their model does the
+  conversation; we do the bookkeeping. "Log that Acme moved me to a final
+  round," said to their Claude, lands in the same journal that draws the
+  funnel.
+- *Agent tools* — `analyze_fit(job_id)`, `tailor_resume(job_id)` invoke our
+  Gemini agents server-side and return the finished artifact. Their model
+  orchestrates; our specialists execute.
+
+**The rules survive a foreign model.** A connected Claude cannot make Head
+Hunter invent experience: `tailor_resume` runs the traceability validator
+server-side and returns only bullets that cite evidence. Rule 1 lives in the
+tools, not in whichever model is talking.
+
+**Auth, in two steps:** v1 uses per-user access tokens created on the Account
+page (works in Claude Code and Claude Desktop immediately); the OAuth flow
+that claude.ai's remote-connector directory requires comes later, once the
+tools have proven themselves. MCP access is a Pro feature and reuses the same
+plan check as the sweep — with the pleasant economics that a connected user
+pays for their own conversation tokens, and we pay only for the agent tools.
+
+**A2A, for later:** ADK ships Agent2Agent support (the deploy already installs
+`google-adk[a2a]`), so exposing the coordinator to *other agents* is
+configuration-scale work. Parked until agent ecosystems, rather than people,
+are knocking.
+
 ## Build order
 
 Each slice ships on its own and is useful without the ones after it.
@@ -107,6 +143,10 @@ Each slice ships on its own and is useful without the ones after it.
    on the Account page, free-tier counters, sweep gated to Pro.
 4. **Pricing on the landing page** — only after 1–3 work and the numbers have
    survived contact with test users.
+5. **MCP connector** — data tools first, then the two agent tools; per-user
+   access tokens on the Account page; Pro-gated from day one (slice 3 exists
+   by then). OAuth for the claude.ai connector directory only once the tools
+   have earned it.
 
 ## Open questions for Thomas
 
