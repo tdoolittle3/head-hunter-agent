@@ -158,6 +158,14 @@
   .msg.md th, .msg.md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
   .msg.md th { color: var(--cyan); font-weight: 500; background: var(--raise); }
   .msg.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .conv-row { display: flex; width: 100%; align-items: center; gap: 12px; text-align: left;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 10px 14px; margin: 0 0 8px; max-width: 86%;
+    text-transform: none; letter-spacing: 0; font-size: 13px; }
+  .conv-row:hover { border-color: var(--cyan); color: inherit; }
+  .conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-date { flex: none; color: var(--dim); font-size: 11px; }
+
   #form { display: flex; gap: 8px; padding: 12px 0 max(20px, env(safe-area-inset-bottom, 0px));
     align-items: flex-end; border-top: 1px solid var(--line); }
   /* 46px lines everything up and clears the 44px touch-target floor; 16px text
@@ -492,10 +500,56 @@
     return el;
   }
 
-  function reset() {
+  const storeKey = () => "hh-conversation-" + auth.currentUser.uid;
+  const pretty = (author) => author.replaceAll("_", " ");
+
+  async function reset() {
     sessionId = null;
+    localStorage.removeItem(storeKey());
     $("log").replaceChildren();
     addMessage("Say hello to get started. Your profile is saved between visits.", "note");
+    try {
+      const recent = await authedJson("/api/conversations", "");
+      if (!recent.length) return;
+      addMessage("Or pick up where you left off:", "note");
+      for (const c of recent) {
+        const row = el("button", "conv-row");
+        row.appendChild(el("span", "conv-title", c.title));
+        row.appendChild(el("span", "conv-date",
+          new Date(c.updated_at * 1000).toLocaleDateString()));
+        row.addEventListener("click", () => resumeConversation(c.session_id));
+        $("log").appendChild(row);
+      }
+    } catch (_) {
+      // The list is a convenience; a fresh chat works without it.
+    }
+  }
+
+  function renderHistory(messages) {
+    $("log").replaceChildren();
+    for (const m of messages) {
+      if (m.author === "user") {
+        addMessage(m.text, "me");
+      } else {
+        const bubble = addMessage("", "md", pretty(m.author));
+        bubble.lastChild.remove();  // the empty text slot
+        bubble.appendChild(HHMarkdown.render(m.text));
+      }
+    }
+    $("log").scrollTop = $("log").scrollHeight;
+  }
+
+  async function resumeConversation(id) {
+    try {
+      const past = await authedJson("/api/conversations/" + encodeURIComponent(id),
+        "Could not load that conversation.");
+      sessionId = past.session_id;
+      localStorage.setItem(storeKey(), sessionId);
+      renderHistory(past.messages);
+      return true;
+    } catch (_) {
+      return false;  // gone or unreachable; the caller starts fresh instead
+    }
   }
 
   const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;  // keep in step with doc_text.MAX_FILE_BYTES
@@ -575,7 +629,6 @@
     setBusy(true);
     addMessage(shown || text, "me");
     const status = addMessage("Thinking…", "note");
-    const pretty = (author) => author.replaceAll("_", " ");
     let open = null;   // the message still receiving deltas
     let spoke = false;
 
@@ -592,6 +645,7 @@
     const handle = (ev) => {
       if (ev.type === "session") {
         sessionId = ev.session_id;
+        localStorage.setItem(storeKey(), sessionId);
       } else if (ev.type === "agent") {
         status.textContent = pretty(ev.author) + " is working…";
       } else if (ev.type === "delta") {
@@ -964,7 +1018,13 @@
     toggleMenu(false);
     view = "chat";
     layout();
-    if (user) { reset(); $("box").focus(); window.scrollTo(0, 0); }
+    if (user) {
+      const saved = localStorage.getItem(storeKey());
+      (saved ? resumeConversation(saved) : Promise.resolve(false))
+        .then((resumed) => { if (!resumed) reset(); });
+      $("box").focus();
+      window.scrollTo(0, 0);
+    }
   });
 </script>
 </body>

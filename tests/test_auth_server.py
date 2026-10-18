@@ -8,6 +8,7 @@ the agent runs under is the one in the token and nothing a client can send.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from types import SimpleNamespace
@@ -15,8 +16,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from google.adk.events import Event
 from google.adk.sessions import InMemorySessionService
 from google.auth.exceptions import InvalidValue
+from google.genai import types
 
 from head_hunter import auth, config, server
 from head_hunter.ratelimit import RateLimiter
@@ -414,6 +417,91 @@ def test_stream_counts_against_the_same_message_limit(runner: FakeRunner) -> Non
     )
     assert over.status_code == 429
     assert len(runner.calls) == 1
+
+
+# Past conversations ---------------------------------------------------------
+
+
+def seed_conversation(
+    runner: FakeRunner, user_id: str, opener: str, reply: str = "Noted."
+) -> str:
+    """Store a finished exchange the way the real runner would, return its id."""
+
+    async def build() -> str:
+        svc = runner.session_service
+        session = await svc.create_session(app_name=server.APP_NAME, user_id=user_id)
+        await svc.append_event(
+            session,
+            Event(
+                author="user",
+                content=types.Content(role="user", parts=[types.Part(text=opener)]),
+            ),
+        )
+        await svc.append_event(
+            session,
+            Event(
+                author="head_hunter",
+                content=types.Content(role="model", parts=[types.Part(text=reply)]),
+            ),
+        )
+        return session.id
+
+    return asyncio.run(build())
+
+
+def test_conversations_require_sign_in(client: TestClient) -> None:
+    assert client.get("/api/conversations").status_code == 401
+    assert client.get("/api/conversations/x").status_code == 401
+
+
+def test_recent_conversations_are_listed_newest_first(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    seed_conversation(runner, "alice-uid", "First chat about Acme")
+    newest = seed_conversation(runner, "alice-uid", "Second chat about Beta")
+
+    rows = client.get("/api/conversations", headers=bearer("alice-token")).json()
+
+    assert [r["title"] for r in rows] == [
+        "Second chat about Beta",
+        "First chat about Acme",
+    ]
+    assert rows[0]["session_id"] == newest
+
+
+def test_an_empty_conversation_is_not_listed(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    asyncio.run(
+        runner.session_service.create_session(
+            app_name=server.APP_NAME, user_id="alice-uid"
+        )
+    )
+    assert client.get("/api/conversations", headers=bearer("alice-token")).json() == []
+
+
+def test_a_conversation_replays_only_what_was_shown(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    sid = seed_conversation(runner, "alice-uid", "hi", reply="hello there")
+
+    body = client.get(f"/api/conversations/{sid}", headers=bearer("alice-token")).json()
+
+    assert body["messages"] == [
+        {"author": "user", "text": "hi"},
+        {"author": "head_hunter", "text": "hello there"},
+    ]
+
+
+def test_one_user_cannot_replay_anothers_conversation(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    sid = seed_conversation(runner, "alice-uid", "private things")
+
+    stolen = client.get(f"/api/conversations/{sid}", headers=bearer("bob-token"))
+
+    assert stolen.status_code == 404
+    assert client.get("/api/conversations", headers=bearer("bob-token")).json() == []
 
 
 # Refusing to start unsafely -----------------------------------------------

@@ -112,6 +112,44 @@ class Reply(BaseModel):
     text: str
 
 
+class ConversationSummary(BaseModel):
+    """One row of the pick-up-where-you-left-off list."""
+
+    session_id: str
+    updated_at: float = Field(description="Unix seconds of the last activity.")
+    title: str = Field(description="The conversation's first user message, clipped.")
+
+
+class ConversationMessage(BaseModel):
+    """One turn as it was shown: the user's words or an agent's finished answer."""
+
+    author: str
+    text: str
+
+
+class Conversation(BaseModel):
+    """A past conversation, replayable into the chat log."""
+
+    session_id: str
+    messages: list[ConversationMessage]
+
+
+MAX_CONVERSATIONS_LISTED = 10
+TITLE_CHARS = 80
+
+
+def _conversation_messages(events: list[Any]) -> list[ConversationMessage]:
+    """The turns a user actually saw: their messages and final agent answers."""
+    messages = []
+    for event in events:
+        if not event.is_final_response():
+            continue
+        text = _event_text(event)
+        if text.strip():
+            messages.append(ConversationMessage(author=event.author, text=text))
+    return messages
+
+
 class ChatResponse(BaseModel):
     """What the agent said, and the session to continue it in."""
 
@@ -593,6 +631,56 @@ def create_app(
             events(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    @api.get("/api/conversations", response_model=list[ConversationSummary])
+    async def conversations(
+        user: Annotated[VerifiedUser, Depends(current_user)],
+    ) -> list[ConversationSummary]:
+        """The caller's recent conversations, newest first, empty ones left out.
+
+        Listings come back without events, so each candidate is fetched in
+        full for its title -- bounded by ``MAX_CONVERSATIONS_LISTED``.
+        """
+        sessions = runner.session_service
+        listing = await sessions.list_sessions(app_name=APP_NAME, user_id=user.uid)
+        newest_first = sorted(
+            listing.sessions, key=lambda s: s.last_update_time or 0, reverse=True
+        )
+        rows = []
+        for session in newest_first:
+            if len(rows) >= MAX_CONVERSATIONS_LISTED:
+                break
+            full = await sessions.get_session(
+                app_name=APP_NAME, user_id=user.uid, session_id=session.id
+            )
+            if full is None:
+                continue
+            messages = _conversation_messages(full.events)
+            opener = next((m.text for m in messages if m.author == "user"), None)
+            if opener is None:
+                continue
+            rows.append(
+                ConversationSummary(
+                    session_id=session.id,
+                    updated_at=session.last_update_time or 0,
+                    title=" ".join(opener.split())[:TITLE_CHARS],
+                )
+            )
+        return rows
+
+    @api.get("/api/conversations/{session_id}", response_model=Conversation)
+    async def conversation(
+        session_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> Conversation:
+        """One past conversation, as the turns the user saw."""
+        session = await runner.session_service.get_session(
+            app_name=APP_NAME, user_id=user.uid, session_id=session_id
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="No such conversation.")
+        return Conversation(
+            session_id=session.id, messages=_conversation_messages(session.events)
         )
 
     return api
