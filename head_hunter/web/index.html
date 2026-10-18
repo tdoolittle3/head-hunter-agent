@@ -3,7 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Head Hunter</title>
+<title>Head Hunter — the AI career agent</title>
+<meta name="description" content="Head Hunter interviews you about your real career, scores job postings against what you have actually done, writes resumes where every line cites its evidence, and tracks each application to its end.">
+<meta name="theme-color" content="#06080d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<!-- __BASE__ is filled in by the server with the host the page is served from. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Head Hunter">
+<meta property="og:title" content="Head Hunter — land the job, never invent a line">
+<meta property="og:description" content="An AI career agent that interviews you, scores postings against your real experience, and writes resumes that cite their evidence.">
+<meta property="og:url" content="__BASE__/">
+<meta property="og:image" content="__BASE__/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Land the job. Never invent a line.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Head Hunter — land the job, never invent a line">
+<meta name="twitter:description" content="An AI career agent that interviews you, scores postings against your real experience, and writes resumes that cite their evidence.">
+<meta name="twitter:image" content="__BASE__/og.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   /* One dark look for the whole app, on purpose: ink-black field, cyan to gold
@@ -17,6 +36,8 @@
     --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  ::selection { background: rgba(34, 211, 238, .35); color: var(--text); }
   html, body { background: var(--ink); }
   body {
     margin: 0; color: var(--text); font: 15px/1.6 var(--mono);

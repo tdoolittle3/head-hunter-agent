@@ -24,9 +24,10 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     PlainTextResponse,
     Response,
@@ -254,9 +255,17 @@ def create_app(
             ) from exc
 
     @api.get("/", include_in_schema=False)
-    def page() -> FileResponse:
-        return FileResponse(
-            WEB_DIR / "index.html",
+    def page(request: Request) -> HTMLResponse:
+        # The social-preview tags need absolute URLs, and the host is only
+        # known at request time. Cloud Run terminates TLS before uvicorn sees
+        # the request, so a non-local http scheme really means https.
+        base = str(request.base_url).rstrip("/")
+        local = re.match(r"http://(localhost|127\.)", base)
+        if base.startswith("http://") and not local:
+            base = "https://" + base.removeprefix("http://")
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(
+            html.replace("__BASE__", base),
             headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"},
         )
 
@@ -267,6 +276,25 @@ def create_app(
             media_type="text/javascript",
             headers={"Cache-Control": "no-store"},
         )
+
+    def serve_asset(name: str, media_type: str) -> None:
+        @api.get(f"/{name}", include_in_schema=False)
+        def asset() -> FileResponse:
+            return FileResponse(
+                WEB_DIR / name,
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    for name, media_type in {
+        "favicon.svg": "image/svg+xml",
+        "apple-touch-icon.png": "image/png",
+        "icon-192.png": "image/png",
+        "icon-512.png": "image/png",
+        "og.png": "image/png",
+        "site.webmanifest": "application/manifest+json",
+    }.items():
+        serve_asset(name, media_type)
 
     @api.get("/firebase-config.json", include_in_schema=False)
     def firebase_config() -> JSONResponse:
