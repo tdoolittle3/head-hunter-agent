@@ -97,6 +97,9 @@ Then open Web Preview on port 8000 and talk to the Head Hunter.
 6. Later, open the **Jobs** page, click the posting, and press **Work on this
    in chat**: it starts a conversation that already knows which job you mean
    and where it stands — scored or not, resume written or not, applied or not.
+   Chats started this way are filed under the job, and the job's page lists
+   them so you can re-enter any of them or start another. Every conversation —
+   here or on the new-chat screen — has an **×** that deletes it for good.
 
 An uploaded resume is a head start, not a shortcut around the rules. The agent
 reads it and records everything it states in the same turn — roles, every

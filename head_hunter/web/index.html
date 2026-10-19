@@ -168,6 +168,13 @@
   .conv-row:hover { border-color: var(--cyan); color: inherit; }
   .conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conv-date { flex: none; color: var(--dim); font-size: 11px; }
+  .conv-job { flex: none; color: var(--gold); font-size: 11px; max-width: 30%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-wrap { display: flex; gap: 6px; align-items: stretch; max-width: 86%; margin: 0 0 8px; }
+  .conv-wrap .conv-row { flex: 1; margin: 0; max-width: none; }
+  .conv-x { flex: none; padding: 0 12px; font-size: 15px; color: var(--dim); }
+  .conv-x:hover { border-color: var(--ember); color: var(--ember); }
+  #jb-chats .conv-wrap { max-width: none; margin: 10px 0 0; }
 
   #pending { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 0;
     border-top: 1px solid var(--line); }
@@ -482,6 +489,9 @@
 
   let sessionId = null;
   let auth = null;
+  // Set when a new chat should belong to a job; sent with the first message,
+  // where the server files it in the session, and cleared once that happens.
+  let pendingJobId = null;
 
   // Example numbers for the landing page. They add up the way real ones do:
   // each stage equals the next stage plus what left at it.
@@ -519,8 +529,42 @@
   const storeKey = () => "hh-conversation-" + auth.currentUser.uid;
   const pretty = (author) => author.replaceAll("_", " ");
 
+  // One row of a conversation list: click to open, × to delete for good.
+  function conversationRow(c, onOpen, onError) {
+    const wrap = el("div", "conv-wrap");
+    const row = el("button", "conv-row");
+    row.appendChild(el("span", "conv-title", c.title));
+    if (c.job_label) row.appendChild(el("span", "conv-job", c.job_label));
+    row.appendChild(el("span", "conv-date",
+      new Date(c.updated_at * 1000).toLocaleDateString()));
+    row.addEventListener("click", onOpen);
+    const drop = el("button", "conv-x", "×");
+    drop.type = "button";
+    drop.title = "Delete this chat";
+    drop.setAttribute("aria-label", "Delete this chat");
+    drop.addEventListener("click", async () => {
+      if (!confirm("Delete this chat? It cannot be brought back.")) return;
+      try {
+        await authedDelete("/api/conversations/" + encodeURIComponent(c.session_id),
+          "Could not delete that chat.");
+      } catch (error) {
+        onError(error);
+        return;
+      }
+      if (sessionId === c.session_id) {
+        sessionId = null;
+        localStorage.removeItem(storeKey());
+      }
+      wrap.remove();
+    });
+    wrap.appendChild(row);
+    wrap.appendChild(drop);
+    return wrap;
+  }
+
   async function reset() {
     sessionId = null;
+    pendingJobId = null;
     localStorage.removeItem(storeKey());
     $("log").replaceChildren();
     addMessage("Say hello to get started. Your profile is saved between visits.", "note");
@@ -529,12 +573,9 @@
       if (!recent.length) return;
       addMessage("Or pick up where you left off:", "note");
       for (const c of recent) {
-        const row = el("button", "conv-row");
-        row.appendChild(el("span", "conv-title", c.title));
-        row.appendChild(el("span", "conv-date",
-          new Date(c.updated_at * 1000).toLocaleDateString()));
-        row.addEventListener("click", () => resumeConversation(c.session_id));
-        $("log").appendChild(row);
+        $("log").appendChild(conversationRow(c,
+          () => resumeConversation(c.session_id),
+          (error) => addMessage(error.message, "err")));
       }
     } catch (_) {
       // The list is a convenience; a fresh chat works without it.
@@ -594,7 +635,11 @@
     const res = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + await idToken() },
-      body: JSON.stringify({ message: text, session_id: sessionId }),
+      body: JSON.stringify({
+        message: text,
+        session_id: sessionId,
+        job_id: sessionId ? null : pendingJobId,
+      }),
     });
     if (res.status === 404) {
       sessionId = null;
@@ -661,6 +706,7 @@
     const handle = (ev) => {
       if (ev.type === "session") {
         sessionId = ev.session_id;
+        pendingJobId = null;  // the session now carries the job tag itself
         localStorage.setItem(storeKey(), sessionId);
       } else if (ev.type === "agent") {
         status.textContent = pretty(ev.author) + " is working…";
@@ -853,6 +899,15 @@
     return res.json();
   }
 
+  async function authedDelete(path, fallback) {
+    const res = await fetch(path, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer " + await idToken() },
+    });
+    if (!res.ok) throw await failure(res, fallback);
+    return res.json();
+  }
+
   // Jobs ---------------------------------------------------------------
 
   function jbError(error) {
@@ -907,6 +962,7 @@
   // whose first message names the job_id so the agent can load where it stands.
   function workOnJob(d) {
     sessionId = null;
+    pendingJobId = d.job_id;  // files the new session under this job
     localStorage.removeItem(storeKey());
     $("log").replaceChildren();
     view = "chat";
@@ -917,6 +973,35 @@
         + ". Check where it stands and pick up from there.",
       "Work on: " + (name || d.job_id),
     );
+  }
+
+  // The chats already started from this job, listed on its page.
+  async function loadJobChats(jobId, container) {
+    let rows = [];
+    try {
+      rows = await authedJson(
+        "/api/conversations?job_id=" + encodeURIComponent(jobId),
+        "Could not load this job's chats.");
+    } catch (error) {
+      jbError(error);
+      return;
+    }
+    if (!rows.length) {
+      container.appendChild(el("p", "ov-note",
+        "No chats about this job yet. “Work on this in chat” starts one."));
+      return;
+    }
+    for (const c of rows) {
+      container.appendChild(conversationRow(c, async () => {
+        if (await resumeConversation(c.session_id)) {
+          view = "chat";
+          layout();
+          $("box").focus();
+        } else {
+          jbError(new Error("That chat could not be loaded. It may have been deleted."));
+        }
+      }, jbError));
+    }
   }
 
   async function openJob(jobId) {
@@ -992,6 +1077,12 @@
       box.appendChild(el("div", "eyebrow", "Gaps"));
       for (const item of d.unmet) box.appendChild(requirementBlock(item, item.gap));
     }
+
+    box.appendChild(el("div", "eyebrow", "Chats about this job"));
+    const chats = el("div");
+    chats.id = "jb-chats";
+    box.appendChild(chats);
+    loadJobChats(d.job_id, chats);
 
     const downloads = el("div", "jb-downloads");
     if (d.has_resume) {
