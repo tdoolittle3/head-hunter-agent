@@ -169,6 +169,13 @@
   .conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conv-date { flex: none; color: var(--dim); font-size: 11px; }
 
+  #pending { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 0;
+    border-top: 1px solid var(--line); }
+  #pending[hidden] { display: none; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 4px; padding: 4px 4px 4px 10px; font-size: 13px; }
+  .chip-x { min-height: 0 !important; padding: 0 8px; font-size: 16px; line-height: 1.4; }
+  #pending + #form { border-top: 0; }
   #form { display: flex; gap: 8px; padding: 12px 0 max(20px, env(safe-area-inset-bottom, 0px));
     align-items: flex-end; border-top: 1px solid var(--line); }
   /* 46px lines everything up and clears the 44px touch-target floor; 16px text
@@ -392,15 +399,16 @@
 
   <section id="app" class="wrap" hidden>
     <div id="log" aria-live="polite"></div>
+    <div id="pending" hidden></div>
     <form id="form">
       <button type="button" id="attach" aria-label="Upload resume"
-        title="Upload a resume — PDF, Word or text file, up to 5 MB">
+        title="Upload one or more resumes — PDF, Word or text file, up to 5 MB each">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l8.57-8.57a4 4 0 1 1 5.66 5.66l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
         </svg>
       </button>
-      <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden>
+      <input type="file" id="file" accept=".pdf,.docx,.txt,.md" multiple hidden>
       <textarea id="box" rows="1" aria-label="Message" required
         placeholder="Say hello, paste a job description, or upload your resume"></textarea>
       <button class="primary" id="send" type="submit">Send</button>
@@ -699,37 +707,87 @@
     box.style.height = box.scrollHeight + "px";
   });
 
-  $("form").addEventListener("submit", (event) => {
+  // Files chosen but not yet sent. They upload when the user presses Send, so
+  // a message can travel with them.
+  let pending = [];
+
+  function renderPending() {
+    const tray = $("pending");
+    tray.replaceChildren();
+    pending.forEach((file, i) => {
+      const chip = el("span", "chip", file.name + " ");
+      const drop = el("button", "chip-x", "×");
+      drop.type = "button";
+      drop.setAttribute("aria-label", "Remove " + file.name);
+      drop.addEventListener("click", () => {
+        pending.splice(i, 1);
+        renderPending();
+      });
+      chip.appendChild(drop);
+      tray.appendChild(chip);
+    });
+    tray.hidden = !pending.length;
+    $("box").required = !pending.length;
+  }
+
+  $("form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const text = $("box").value.trim();
-    if (!text) return;
-    $("box").value = "";
-    $("box").style.height = "";
-    converse(text);
-  });
+    if (!text && !pending.length) return;
+    const files = pending;
 
-  $("attach").addEventListener("click", () => $("file").click());
-  $("file").addEventListener("change", async () => {
-    const file = $("file").files[0];
-    $("file").value = "";  // so choosing the same file again still fires
-    if (!file) return;
+    if (!files.length) {
+      $("box").value = "";
+      $("box").style.height = "";
+      converse(text);
+      return;
+    }
+
     setBusy(true);
-    const waiting = addMessage("Uploading " + file.name + "…", "note");
-    let uploaded;
+    const waiting = addMessage("Uploading " + files.length + " file(s)…", "note");
+    const uploaded = [];
     try {
-      uploaded = await uploadResume(file);
+      for (const file of files) uploaded.push(await uploadResume(file));
     } catch (error) {
+      // Keep the message and the files that did not go, so nothing is retyped.
       addMessage(error.message, "err");
+      pending = files.slice(uploaded.length);
+      renderPending();
       return;
     } finally {
       waiting.remove();
       setBusy(false);
     }
+    pending = [];
+    renderPending();
+    $("box").value = "";
+    $("box").style.height = "";
+
+    const names = uploaded.map((u) => u.filename).join(", ");
+    const ids = uploaded.map((u) => u.filename + " (upload id " + u.upload_id + ")").join("; ");
+    const intro = uploaded.length === 1
+      ? "I just uploaded my resume: " + ids + "."
+      : "I just uploaded " + uploaded.length + " versions of my resume: " + ids +
+        ". Read all of them and merge every unique line into my profile.";
     await converse(
-      "I just uploaded my resume, " + uploaded.filename +
-        " (upload id " + uploaded.upload_id + "). Please read it.",
-      "Uploaded " + uploaded.filename,
+      text ? intro + "\n\n" + text : intro + " Please read it.",
+      (text ? text + "\n" : "") + "📎 " + names,
     );
+  });
+
+  $("attach").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", () => {
+    const chosen = [...$("file").files];
+    $("file").value = "";  // so choosing the same file again still fires
+    for (const file of chosen) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        addMessage(file.name + " is larger than 5 MB, which is too big for a resume.", "err");
+      } else {
+        pending.push(file);
+      }
+    }
+    renderPending();
+    $("box").focus();
   });
 
   $("box").addEventListener("keydown", (event) => {
@@ -870,6 +928,10 @@
     a.remove();
     URL.revokeObjectURL(url);
   }
+
+  document.addEventListener("hh-download", (event) => {
+    download(event.detail).catch((error) => addMessage(error.message, "err"));
+  });
 
   function requirementBlock(item, tag) {
     const req = el("div", "req");

@@ -312,6 +312,8 @@ def render_resume(job_id: str, tool_context: ToolContext | None = None) -> dict:
         "job_id": job_id,
         "markdown_path": markdown_path,
         "docx_path": docx_path,
+        "docx_link": f"/api/jobs/{job_id}/resume.docx",
+        "markdown_link": f"/api/jobs/{job_id}/resume.md",
         "bullet_count": resume.validation.checked_bullets,
         "markdown": markdown,
     }

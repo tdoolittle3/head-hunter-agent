@@ -261,6 +261,7 @@ def test_rendering_writes_both_files(seeded: dict) -> None:
     assert markdown_path.is_file() and docx_path.is_file()
     assert markdown_path.read_text(encoding="utf-8") == result["markdown"]
     assert docx_path.read_bytes()[:2] == b"PK"  # a .docx is a zip
+    assert result["docx_link"] == f"/api/jobs/{seeded['job_id']}/resume.docx"
     assert "Staff Engineer, Acme Foods" in result["markdown"]
 
 

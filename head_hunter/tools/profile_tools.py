@@ -10,11 +10,14 @@ and it stores it in a field named ``hypothesis`` that no resume can ever cite.
 
 from __future__ import annotations
 
+from difflib import SequenceMatcher
+
 from google.adk.tools import ToolContext
 
-from head_hunter.doc_text import is_excerpt
+from head_hunter.doc_text import is_excerpt, normalize_for_match
 from head_hunter.schemas import (
     Accomplishment,
+    Education,
     Evidence,
     OpenQuestion,
     Profile,
@@ -178,6 +181,7 @@ def save_profile(
     phone: str | None = None,
     location: str | None = None,
     headline: str | None = None,
+    links: list[str] | None = None,
     goals: list[str] | None = None,
     target_locations: list[str] | None = None,
     remote_preference: str | None = None,
@@ -196,6 +200,7 @@ def save_profile(
         phone: Contact phone.
         location: Where they live now.
         headline: One line they use to describe themselves.
+        links: LinkedIn, GitHub, portfolio and similar addresses they gave.
         goals: What they want next, in their words.
         target_locations: Places they would work.
         remote_preference: One of remote, hybrid, onsite, flexible.
@@ -219,6 +224,8 @@ def save_profile(
         if value is not None:
             setattr(profile.identity, field, value)
 
+    if links is not None:
+        profile.identity.links = list(dict.fromkeys([*profile.identity.links, *links]))
     if goals is not None:
         profile.goals = goals
     if target_locations is not None:
@@ -259,7 +266,9 @@ def add_role(
     """Record one job the user has held.
 
     Add the role before its accomplishments: every accomplishment needs the
-    ``role_id`` this returns.
+    ``role_id`` this returns. Calling it again for the same company and title
+    (a second resume, a correction) updates that role with any details given
+    rather than creating a duplicate, and returns the same ``role_id``.
 
     Args:
         company: Employer or client.
@@ -277,6 +286,36 @@ def add_role(
         The new ``role_id``, which you need for add_accomplishment.
     """
     profile = _load_or_create(tool_context)
+
+    key = (normalize_for_match(company), normalize_for_match(title))
+    existing = next(
+        (
+            r
+            for r in profile.roles
+            if (normalize_for_match(r.company), normalize_for_match(r.title)) == key
+        ),
+        None,
+    )
+    if existing is not None:
+        for field, value in [
+            ("start_date", start_date),
+            ("end_date", end_date),
+            ("location", location),
+            ("employment_type", employment_type),
+            ("summary", summary),
+        ]:
+            if value is not None:
+                setattr(existing, field, value)
+        if is_current:
+            existing.is_current = True
+        repository().save_profile(profile)
+        return {
+            "status": "exists",
+            "role_id": existing.id,
+            "company": existing.company,
+            "title": existing.title,
+        }
+
     role = Role(
         id=new_id("role", {r.id for r in profile.roles}),
         company=company,
@@ -291,6 +330,74 @@ def add_role(
     profile.roles.append(role)
     repository().save_profile(profile)
     return {"status": "saved", "role_id": role.id, "company": company, "title": title}
+
+
+def add_education(
+    institution: str,
+    credential: str | None = None,
+    field: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    completed: bool = True,
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Record a degree, certification, licence, clearance or training program.
+
+    Record these as soon as the user mentions one, from a resume or in chat. A
+    resume cannot be rebuilt without them, and they are often hard requirements.
+    Calling it again for the same institution and credential updates the entry.
+
+    Args:
+        institution: School or issuing body.
+        credential: Degree or certification earned, e.g. 'B.S.' or 'PMP'.
+        field: Field of study.
+        start_date: Start, e.g. '2014'.
+        end_date: End or expected end.
+        completed: False if still in progress.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
+
+    Returns:
+        The education id.
+    """
+    profile = _load_or_create(tool_context)
+    key = (normalize_for_match(institution), normalize_for_match(credential or ""))
+    existing = next(
+        (
+            e
+            for e in profile.education
+            if (
+                normalize_for_match(e.institution),
+                normalize_for_match(e.credential or ""),
+            )
+            == key
+        ),
+        None,
+    )
+    if existing is not None:
+        for name, value in [
+            ("field", field),
+            ("start_date", start_date),
+            ("end_date", end_date),
+        ]:
+            if value is not None:
+                setattr(existing, name, value)
+        existing.completed = completed
+        repository().save_profile(profile)
+        return {"status": "exists", "education_id": existing.id}
+
+    entry = Education(
+        id=new_id("edu", {e.id for e in profile.education}),
+        institution=institution,
+        credential=credential,
+        field=field,
+        start_date=start_date,
+        end_date=end_date,
+        completed=completed,
+    )
+    profile.education.append(entry)
+    repository().save_profile(profile)
+    return {"status": "saved", "education_id": entry.id}
 
 
 def add_accomplishment(
@@ -367,12 +474,38 @@ def add_accomplishment(
 
 NOT_STATED = "Not stated in resume"
 
+SIMILAR_LINE_RATIO = 0.85
+"""How alike two resume lines must be to count as one claim reworded."""
+
+
+def _find_existing_line(
+    profile: Profile, role_id: str, text: str
+) -> tuple[Accomplishment, bool] | None:
+    """Find a recorded line for this role that ``text`` repeats.
+
+    Returns the accomplishment and whether the match is exact (same words once
+    layout noise is removed) or merely similar. Plain string comparison, no model.
+    """
+    wanted = normalize_for_match(text)
+    best: tuple[Accomplishment, float] | None = None
+    for acc in profile.accomplishments:
+        if acc.role_id != role_id:
+            continue
+        have = normalize_for_match(acc.source_text)
+        if have == wanted:
+            return acc, True
+        ratio = SequenceMatcher(None, have, wanted).ratio()
+        if ratio >= SIMILAR_LINE_RATIO and (best is None or ratio > best[1]):
+            best = (acc, ratio)
+    return (best[0], False) if best else None
+
 
 def add_resume_accomplishment(
     role_id: str,
     source_text: str,
     upload_id: str,
     tools: list[str] | None = None,
+    keep_both: bool = False,
     tool_context: ToolContext | None = None,
 ) -> dict:
     """Record one line of the user's uploaded resume as an accomplishment.
@@ -383,11 +516,18 @@ def add_resume_accomplishment(
     for them afterwards. The quote must appear in the file word for word, or this
     refuses.
 
+    When several versions of a resume are uploaded, call this for every line of
+    each. A line already in the profile for that role is skipped ("duplicate"),
+    and a near-identical rewording is held back ("similar") rather than recorded
+    twice.
+
     Args:
         role_id: The role this line belongs to, from add_role or load_profile.
         source_text: The resume line or bullet, copied exactly as written.
         upload_id: The upload it came from, from load_uploaded_resume.
         tools: Technologies or systems the line names.
+        keep_both: Record the line even though a similar one exists, because it
+            adds something the earlier wording lacks (a number, a tool, a scope).
         tool_context: Supplied by the system to say whose records these are.
             Never fill this in.
 
@@ -406,6 +546,28 @@ def add_resume_accomplishment(
 
     cleaned = _require_source_text(source_text, "a resume line", from_upload=True)
     upload = _upload_for_quote(upload_id, cleaned, tool_context)
+
+    match = _find_existing_line(profile, role_id, cleaned)
+    if match is not None:
+        existing, exact = match
+        if exact:
+            return {
+                "status": "duplicate",
+                "accomplishment_id": existing.id,
+                "message": "Already in the profile word for word; nothing added.",
+            }
+        if not keep_both:
+            return {
+                "status": "similar",
+                "accomplishment_id": existing.id,
+                "existing_text": existing.source_text,
+                "message": (
+                    "A very similar line is already recorded for this role. Nothing "
+                    "added. If the new wording says something the old one does not, "
+                    "call again with keep_both=True."
+                ),
+            }
+
     evidence = _add_evidence(
         profile, cleaned, note=f"resume line at {role_id}", upload=upload
     )
@@ -427,6 +589,62 @@ def add_resume_accomplishment(
         "accomplishment_id": accomplishment.id,
         "evidence_id": evidence.id,
         "still_needed": "situation and result: ask the user about them",
+    }
+
+
+def add_resume_accomplishments(
+    role_id: str,
+    upload_id: str,
+    lines: list[str],
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Record many lines of an uploaded resume under one role in a single call.
+
+    Prefer this to calling add_resume_accomplishment line by line: pass every
+    substantive bullet under the role at once. Each line is checked on its own,
+    so one bad quote does not stop the rest. Repeats are skipped and near-repeats
+    held back, exactly as in add_resume_accomplishment.
+
+    Args:
+        role_id: The role these lines belong to, from add_role or load_profile.
+        upload_id: The upload they came from, from load_uploaded_resume.
+        lines: Resume bullets, each copied exactly as written.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
+
+    Returns:
+        Counts of lines saved, skipped as duplicates, held back as similar, and
+        refused, with the text of each refused or similar line.
+    """
+    saved = duplicates = 0
+    similar: list[dict] = []
+    refused: list[dict] = []
+    for line in lines:
+        try:
+            result = add_resume_accomplishment(
+                role_id=role_id,
+                source_text=line,
+                upload_id=upload_id,
+                tool_context=tool_context,
+            )
+        except ToolError as error:
+            if "No role with id" in str(error):
+                raise
+            refused.append({"line": line, "reason": str(error)})
+            continue
+        if result["status"] == "saved":
+            saved += 1
+        elif result["status"] == "duplicate":
+            duplicates += 1
+        else:
+            similar.append({"line": line, "existing_text": result["existing_text"]})
+
+    return {
+        "saved": saved,
+        "duplicates_skipped": duplicates,
+        "similar_held_back": similar,
+        "refused": refused,
+        "still_needed": "situation and result for each saved line: ask the user",
     }
 
 

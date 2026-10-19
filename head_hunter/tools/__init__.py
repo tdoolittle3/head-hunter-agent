@@ -18,8 +18,10 @@ from head_hunter.tools.journal_tools import (
 )
 from head_hunter.tools.profile_tools import (
     add_accomplishment,
+    add_education,
     add_open_question,
     add_resume_accomplishment,
+    add_resume_accomplishments,
     add_role,
     add_skill,
     load_profile,
@@ -38,7 +40,9 @@ INTERVIEWER_TOOLS = [
     save_profile,
     add_role,
     add_accomplishment,
+    add_education,
     add_resume_accomplishment,
+    add_resume_accomplishments,
     add_skill,
     add_open_question,
 ]
@@ -67,8 +71,10 @@ __all__ = [
     "RESUME_TAILOR_TOOLS",
     "ToolError",
     "add_accomplishment",
+    "add_education",
     "add_open_question",
     "add_resume_accomplishment",
+    "add_resume_accomplishments",
     "add_role",
     "add_skill",
     "get_application_funnel",
