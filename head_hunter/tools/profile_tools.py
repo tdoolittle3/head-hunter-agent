@@ -10,9 +10,11 @@ and it stores it in a field named ``hypothesis`` that no resume can ever cite.
 
 from __future__ import annotations
 
+from difflib import SequenceMatcher
+
 from google.adk.tools import ToolContext
 
-from head_hunter.doc_text import is_excerpt
+from head_hunter.doc_text import is_excerpt, normalize_for_match
 from head_hunter.schemas import (
     Accomplishment,
     Evidence,
@@ -367,12 +369,38 @@ def add_accomplishment(
 
 NOT_STATED = "Not stated in resume"
 
+SIMILAR_LINE_RATIO = 0.85
+"""How alike two resume lines must be to count as one claim reworded."""
+
+
+def _find_existing_line(
+    profile: Profile, role_id: str, text: str
+) -> tuple[Accomplishment, bool] | None:
+    """Find a recorded line for this role that ``text`` repeats.
+
+    Returns the accomplishment and whether the match is exact (same words once
+    layout noise is removed) or merely similar. Plain string comparison, no model.
+    """
+    wanted = normalize_for_match(text)
+    best: tuple[Accomplishment, float] | None = None
+    for acc in profile.accomplishments:
+        if acc.role_id != role_id:
+            continue
+        have = normalize_for_match(acc.source_text)
+        if have == wanted:
+            return acc, True
+        ratio = SequenceMatcher(None, have, wanted).ratio()
+        if ratio >= SIMILAR_LINE_RATIO and (best is None or ratio > best[1]):
+            best = (acc, ratio)
+    return (best[0], False) if best else None
+
 
 def add_resume_accomplishment(
     role_id: str,
     source_text: str,
     upload_id: str,
     tools: list[str] | None = None,
+    keep_both: bool = False,
     tool_context: ToolContext | None = None,
 ) -> dict:
     """Record one line of the user's uploaded resume as an accomplishment.
@@ -383,11 +411,18 @@ def add_resume_accomplishment(
     for them afterwards. The quote must appear in the file word for word, or this
     refuses.
 
+    When several versions of a resume are uploaded, call this for every line of
+    each. A line already in the profile for that role is skipped ("duplicate"),
+    and a near-identical rewording is held back ("similar") rather than recorded
+    twice.
+
     Args:
         role_id: The role this line belongs to, from add_role or load_profile.
         source_text: The resume line or bullet, copied exactly as written.
         upload_id: The upload it came from, from load_uploaded_resume.
         tools: Technologies or systems the line names.
+        keep_both: Record the line even though a similar one exists, because it
+            adds something the earlier wording lacks (a number, a tool, a scope).
         tool_context: Supplied by the system to say whose records these are.
             Never fill this in.
 
@@ -406,6 +441,28 @@ def add_resume_accomplishment(
 
     cleaned = _require_source_text(source_text, "a resume line", from_upload=True)
     upload = _upload_for_quote(upload_id, cleaned, tool_context)
+
+    match = _find_existing_line(profile, role_id, cleaned)
+    if match is not None:
+        existing, exact = match
+        if exact:
+            return {
+                "status": "duplicate",
+                "accomplishment_id": existing.id,
+                "message": "Already in the profile word for word; nothing added.",
+            }
+        if not keep_both:
+            return {
+                "status": "similar",
+                "accomplishment_id": existing.id,
+                "existing_text": existing.source_text,
+                "message": (
+                    "A very similar line is already recorded for this role. Nothing "
+                    "added. If the new wording says something the old one does not, "
+                    "call again with keep_both=True."
+                ),
+            }
+
     evidence = _add_evidence(
         profile, cleaned, note=f"resume line at {role_id}", upload=upload
     )

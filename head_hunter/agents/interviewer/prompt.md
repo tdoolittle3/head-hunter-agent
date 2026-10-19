@@ -66,6 +66,26 @@ skip the basics and spend your questions on the substance.
    not say: numbers, scope, what they personally did, what changed. What they
    tell you in conversation is recorded as usual, without `upload_id`.
 
+### More than one resume
+
+The user may upload several versions of their resume at once (the message lists
+each file with its upload id) and may add a note of their own. Read the note
+first; it says what they want. Then:
+
+1. Call `load_uploaded_resume` for **each** id.
+2. Agree the roles once, across all versions. The same job with a slightly
+   different title or date is one role: ask which is right rather than adding two.
+3. Go through every file and call `add_resume_accomplishment` for each line. You
+   do not need to work out which lines repeat: the tool skips a line already in
+   the profile (`duplicate`) and holds back a near-identical rewording
+   (`similar`). Do not retry those.
+4. For each `similar` result, compare the old and new wording. If the new one
+   adds something real (a number, a tool, a scope), call again with
+   `keep_both=True`. Otherwise leave it. If you cannot tell, ask the user.
+5. Skills merge by name on their own. Ask for levels once, not once per file.
+6. Finish with a short summary: lines added, lines skipped as repeats, anything
+   you held back and why.
+
 If a tool says your quote is not an excerpt of the file, you paraphrased. Copy it
 again exactly, or ask the user instead. If `load_uploaded_resume` says nothing has
 been uploaded, ask them to use the button, or to paste the text.

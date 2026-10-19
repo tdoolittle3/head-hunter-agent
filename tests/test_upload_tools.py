@@ -327,3 +327,72 @@ def test_a_resume_line_needs_a_real_upload() -> None:
             source_text="Mentored four junior engineers through their first on-call",
             upload_id="up-20260101-deadbeef",
         )
+
+
+# Merging several versions of a resume --------------------------------------
+
+LINE = "Rewrote the billing pipeline and cut month-end close from nine days to two."
+REWORDED = (
+    "Rewrote the billing pipeline and cut month-end close from nine days to two days."
+)
+
+
+MENTOR = "Mentored four junior engineers through their first on-call rotations."
+
+
+def _accomplishment_count() -> int:
+    profile = JsonRepository().get_profile("local")
+    assert profile is not None
+    return len(profile.accomplishments)
+
+
+def test_the_same_line_in_a_second_resume_is_not_recorded_twice() -> None:
+    first = store_upload(filename="v1.txt")
+    second = store_upload(
+        filename="v2.txt", text=RESUME + "\n" + "Extra line here today."
+    )
+    role_id = a_role()
+
+    add_resume_accomplishment(role_id=role_id, source_text=LINE, upload_id=first.id)
+    repeat = add_resume_accomplishment(
+        role_id=role_id, source_text=LINE, upload_id=second.id
+    )
+
+    assert repeat["status"] == "duplicate"
+    assert _accomplishment_count() == 1
+
+
+def test_a_near_identical_rewording_is_held_back_until_asked_for() -> None:
+    first = store_upload(filename="v1.txt")
+    second = store_upload(filename="v2.txt", text=RESUME.replace("two.", "two days."))
+    role_id = a_role()
+    add_resume_accomplishment(role_id=role_id, source_text=LINE, upload_id=first.id)
+
+    held = add_resume_accomplishment(
+        role_id=role_id, source_text=REWORDED, upload_id=second.id
+    )
+    assert held["status"] == "similar"
+    assert held["existing_text"] == LINE
+    assert _accomplishment_count() == 1
+
+    kept = add_resume_accomplishment(
+        role_id=role_id, source_text=REWORDED, upload_id=second.id, keep_both=True
+    )
+    assert kept["status"] == "saved"
+    assert _accomplishment_count() == 2
+
+
+def test_a_genuinely_new_line_in_a_second_resume_is_added() -> None:
+    first = store_upload(filename="v1.txt")
+    second = store_upload(filename="v2.txt")
+    role_id = a_role()
+    add_resume_accomplishment(role_id=role_id, source_text=LINE, upload_id=first.id)
+
+    new = add_resume_accomplishment(
+        role_id=role_id,
+        source_text=MENTOR,
+        upload_id=second.id,
+    )
+
+    assert new["status"] == "saved"
+    assert _accomplishment_count() == 2
