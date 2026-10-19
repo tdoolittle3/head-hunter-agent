@@ -86,6 +86,14 @@ class ChatRequest(BaseModel):
         default=None,
         description="Continue this conversation. Omit to start a new one.",
     )
+    job_id: str | None = Field(
+        default=None,
+        description=(
+            "Tie a brand-new conversation to this saved posting, so the Jobs "
+            "page can list it later. Only read when session_id is empty: a "
+            "continued conversation keeps the job it started with."
+        ),
+    )
 
 
 class UploadResponse(BaseModel):
@@ -118,6 +126,12 @@ class ConversationSummary(BaseModel):
     session_id: str
     updated_at: float = Field(description="Unix seconds of the last activity.")
     title: str = Field(description="The conversation's first user message, clipped.")
+    job_id: str | None = Field(
+        default=None, description="The saved posting this chat was started from."
+    )
+    job_label: str | None = Field(
+        default=None, description="That posting's title and company, for display."
+    )
 
 
 class ConversationMessage(BaseModel):
@@ -537,10 +551,29 @@ def create_app(
                 headers={"Retry-After": str(seconds)},
             )
 
-    async def open_session(uid: str, session_id: str | None) -> Session:
+    async def open_session(
+        uid: str, session_id: str | None, job_id: str | None = None
+    ) -> Session:
         sessions = runner.session_service
         if session_id is None:
-            return await sessions.create_session(app_name=APP_NAME, user_id=uid)
+            state = None
+            if job_id is not None:
+                # A job tag must point at a posting the caller actually has,
+                # or the Jobs page would list chats under a job that is not
+                # there.
+                try:
+                    job = open_repository().get_job(uid, job_id)
+                except StorageError:
+                    logger.exception("Could not look up job %s for %s", job_id, uid)
+                    raise HTTPException(
+                        status_code=500, detail="Could not look up that job."
+                    ) from None
+                if job is None:
+                    raise HTTPException(status_code=404, detail="No such job.")
+                state = {"job_id": job_id}
+            return await sessions.create_session(
+                app_name=APP_NAME, user_id=uid, state=state
+            )
         # Looked up under the caller's own uid, so someone else's session
         # id is indistinguishable from one that does not exist.
         session = await sessions.get_session(
@@ -555,7 +588,7 @@ def create_app(
         body: ChatRequest, user: Annotated[VerifiedUser, Depends(current_user)]
     ) -> ChatResponse:
         check_message_limit(user.uid)
-        session = await open_session(user.uid, body.session_id)
+        session = await open_session(user.uid, body.session_id, body.job_id)
 
         message = types.Content(role="user", parts=[types.Part(text=body.message)])
         try:
@@ -587,7 +620,7 @@ def create_app(
         drafts of it), ``error``, and ``done``.
         """
         check_message_limit(user.uid)
-        session = await open_session(user.uid, body.session_id)
+        session = await open_session(user.uid, body.session_id, body.job_id)
         message = types.Content(role="user", parts=[types.Part(text=body.message)])
 
         async def events() -> AsyncIterator[str]:
@@ -636,8 +669,12 @@ def create_app(
     @api.get("/api/conversations", response_model=list[ConversationSummary])
     async def conversations(
         user: Annotated[VerifiedUser, Depends(current_user)],
+        job_id: str | None = None,
     ) -> list[ConversationSummary]:
         """The caller's recent conversations, newest first, empty ones left out.
+
+        With ``job_id``, only the chats started from that posting — the Jobs
+        page uses this to list a job's conversations beside it.
 
         Listings come back without events, so each candidate is fetched in
         full for its title -- bounded by ``MAX_CONVERSATIONS_LISTED``.
@@ -647,6 +684,15 @@ def create_app(
         newest_first = sorted(
             listing.sessions, key=lambda s: s.last_update_time or 0, reverse=True
         )
+        try:
+            labels = {
+                job.id: " at ".join(p for p in (job.title, job.company) if p) or job.id
+                for job in open_repository().list_jobs(user.uid)
+            }
+        except StorageError:
+            # The label is a convenience; the list still works without it.
+            logger.exception("Could not label conversations for %s", user.uid)
+            labels = {}
         rows = []
         for session in newest_first:
             if len(rows) >= MAX_CONVERSATIONS_LISTED:
@@ -655,6 +701,9 @@ def create_app(
                 app_name=APP_NAME, user_id=user.uid, session_id=session.id
             )
             if full is None:
+                continue
+            session_job = (full.state or {}).get("job_id")
+            if job_id is not None and session_job != job_id:
                 continue
             messages = _conversation_messages(full.events)
             opener = next((m.text for m in messages if m.author == "user"), None)
@@ -665,9 +714,31 @@ def create_app(
                     session_id=session.id,
                     updated_at=session.last_update_time or 0,
                     title=" ".join(opener.split())[:TITLE_CHARS],
+                    job_id=session_job,
+                    job_label=labels.get(session_job),
                 )
             )
         return rows
+
+    @api.delete("/api/conversations/{session_id}")
+    async def delete_conversation(
+        session_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> dict[str, str]:
+        """Delete one past conversation, permanently.
+
+        Looked up under the caller's own uid first, so deleting someone else's
+        session id is indistinguishable from deleting one that never existed.
+        """
+        sessions = runner.session_service
+        session = await sessions.get_session(
+            app_name=APP_NAME, user_id=user.uid, session_id=session_id
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="No such conversation.")
+        await sessions.delete_session(
+            app_name=APP_NAME, user_id=user.uid, session_id=session_id
+        )
+        return {"status": "deleted"}
 
     @api.get("/api/conversations/{session_id}", response_model=Conversation)
     async def conversation(

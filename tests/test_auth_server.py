@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Mapping
+from itertools import count
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,6 +26,8 @@ from google.genai import types
 
 from head_hunter import auth, config, server
 from head_hunter.ratelimit import RateLimiter
+from head_hunter.schemas import JobPosting, Requirement
+from head_hunter.storage import JsonRepository
 
 PROJECT = "head-hunter-agent"
 WEB_CONFIG = {"projectId": PROJECT, "apiKey": "k", "authDomain": "a", "appId": "i"}
@@ -106,8 +111,11 @@ class FakeRunner:
 
 
 @pytest.fixture(autouse=True)
-def multi_user_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def multi_user_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("HH_SINGLE_USER", raising=False)
+    # The server reads the store for job labels and job-tagged chats; point it
+    # at a throwaway directory so tests never see a developer's own data/.
+    monkeypatch.setenv("HH_DATA_DIR", str(tmp_path))
 
 
 @pytest.fixture
@@ -422,18 +430,32 @@ def test_stream_counts_against_the_same_message_limit(runner: FakeRunner) -> Non
 # Past conversations ---------------------------------------------------------
 
 
+# "Newest first" cannot order two conversations whose last events land in the
+# same clock tick, and on Windows the clock ticks coarsely enough for seeds to
+# tie. Each seeded conversation gets strictly later event timestamps.
+_conversation_clock = count()
+
+
 def seed_conversation(
-    runner: FakeRunner, user_id: str, opener: str, reply: str = "Noted."
+    runner: FakeRunner,
+    user_id: str,
+    opener: str,
+    reply: str = "Noted.",
+    state: dict[str, Any] | None = None,
 ) -> str:
     """Store a finished exchange the way the real runner would, return its id."""
+    stamp = time.time() + next(_conversation_clock) * 1e-3
 
     async def build() -> str:
         svc = runner.session_service
-        session = await svc.create_session(app_name=server.APP_NAME, user_id=user_id)
+        session = await svc.create_session(
+            app_name=server.APP_NAME, user_id=user_id, state=state
+        )
         await svc.append_event(
             session,
             Event(
                 author="user",
+                timestamp=stamp,
                 content=types.Content(role="user", parts=[types.Part(text=opener)]),
             ),
         )
@@ -441,6 +463,7 @@ def seed_conversation(
             session,
             Event(
                 author="head_hunter",
+                timestamp=stamp + 1e-4,
                 content=types.Content(role="model", parts=[types.Part(text=reply)]),
             ),
         )
@@ -502,6 +525,135 @@ def test_one_user_cannot_replay_anothers_conversation(
 
     assert stolen.status_code == 404
     assert client.get("/api/conversations", headers=bearer("bob-token")).json() == []
+
+
+# Deleting conversations -------------------------------------------------------
+
+
+def test_deleting_a_conversation_requires_sign_in(client: TestClient) -> None:
+    assert client.delete("/api/conversations/x").status_code == 401
+
+
+def test_a_deleted_conversation_is_gone(client: TestClient, runner: FakeRunner) -> None:
+    sid = seed_conversation(runner, "alice-uid", "delete me")
+
+    gone = client.delete(f"/api/conversations/{sid}", headers=bearer("alice-token"))
+
+    assert gone.status_code == 200
+    assert gone.json() == {"status": "deleted"}
+    replay = client.get(f"/api/conversations/{sid}", headers=bearer("alice-token"))
+    assert replay.status_code == 404
+    assert client.get("/api/conversations", headers=bearer("alice-token")).json() == []
+
+
+def test_deleting_a_conversation_that_is_not_there_is_a_404(
+    client: TestClient,
+) -> None:
+    gone = client.delete("/api/conversations/nope", headers=bearer("alice-token"))
+    assert gone.status_code == 404
+
+
+def test_one_user_cannot_delete_anothers_conversation(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    sid = seed_conversation(runner, "alice-uid", "private things")
+
+    stolen = client.delete(f"/api/conversations/{sid}", headers=bearer("bob-token"))
+
+    assert stolen.status_code == 404
+    rows = client.get("/api/conversations", headers=bearer("alice-token")).json()
+    assert [r["session_id"] for r in rows] == [sid]
+
+
+# Chats tied to a saved job ----------------------------------------------------
+
+
+def seed_job(user_id: str = "alice-uid") -> str:
+    """Put one posting in the store, the way Intake would."""
+    job = JobPosting(
+        id="job-globex",
+        user_id=user_id,
+        source="paste",
+        company="Globex",
+        title="Data Engineer",
+        requirements=[Requirement(text="Python", kind="required", category="skill")],
+        raw_text="the posting as pasted",
+    )
+    JsonRepository().save_job(job)
+    return job.id
+
+
+def test_a_new_chat_can_be_tied_to_a_saved_job(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    job_id = seed_job()
+
+    response = client.post(
+        "/api/chat",
+        json={"message": "hi", "job_id": job_id},
+        headers=bearer("alice-token"),
+    )
+
+    assert response.status_code == 200
+    session = asyncio.run(
+        runner.session_service.get_session(
+            app_name=server.APP_NAME,
+            user_id="alice-uid",
+            session_id=response.json()["session_id"],
+        )
+    )
+    assert session.state["job_id"] == job_id
+
+
+def test_a_chat_cannot_be_tied_to_a_job_that_is_not_there(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    response = client.post(
+        "/api/chat",
+        json={"message": "hi", "job_id": "job-nope"},
+        headers=bearer("alice-token"),
+    )
+
+    assert response.status_code == 404
+    assert runner.calls == []
+
+
+def test_a_chat_cannot_be_tied_to_another_users_job(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    job_id = seed_job(user_id="alice-uid")
+
+    response = client.post(
+        "/api/chat",
+        json={"message": "hi", "job_id": job_id},
+        headers=bearer("bob-token"),
+    )
+
+    assert response.status_code == 404
+    assert runner.calls == []
+
+
+def test_a_jobs_conversations_can_be_listed_apart(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    job_id = seed_job()
+    seed_conversation(runner, "alice-uid", "general career chat")
+    tagged = seed_conversation(
+        runner, "alice-uid", "about the Globex job", state={"job_id": job_id}
+    )
+
+    rows = client.get(
+        f"/api/conversations?job_id={job_id}", headers=bearer("alice-token")
+    ).json()
+
+    assert [r["session_id"] for r in rows] == [tagged]
+    assert rows[0]["job_id"] == job_id
+    assert rows[0]["job_label"] == "Data Engineer at Globex"
+
+    everything = client.get("/api/conversations", headers=bearer("alice-token")).json()
+    assert len(everything) == 2
+    untagged = next(r for r in everything if r["session_id"] != tagged)
+    assert untagged["job_id"] is None and untagged["job_label"] is None
 
 
 # Refusing to start unsafely -----------------------------------------------

@@ -7,6 +7,8 @@ words unless the resume says so, however it is prompted.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -41,9 +43,21 @@ def isolated_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HH_SINGLE_USER", "local")
 
 
+# "Newest first" cannot order two uploads stamped in the same clock tick, and
+# on Windows the clock ticks coarsely enough for back-to-back saves to tie. Each
+# seeded upload gets a strictly later timestamp so the order under test is real.
+_upload_clock = count()
+
+
 def store_upload(text: str = RESUME, filename: str = "jane.pdf") -> UploadedDocument:
     return JsonRepository().save_upload(
-        UploadedDocument(user_id="local", filename=filename, text=text, pages=1)
+        UploadedDocument(
+            user_id="local",
+            filename=filename,
+            text=text,
+            pages=1,
+            created_at=datetime.now(UTC) + timedelta(microseconds=next(_upload_clock)),
+        )
     )
 
 
