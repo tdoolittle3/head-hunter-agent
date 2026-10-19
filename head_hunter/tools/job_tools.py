@@ -145,6 +145,84 @@ def save_job_posting(
     }
 
 
+def get_job_status(job_id: str, tool_context: ToolContext | None = None) -> dict:
+    """Report where one saved job stands, so a session can pick up from it.
+
+    Use this when the user arrives wanting to work on a specific posting — the
+    Jobs page opens the chat with a message naming its ``job_id``. It gathers
+    what exists for that job in one call: the posting itself, the fit report if
+    one has been run, the tailored resume if one has been written, and any
+    application events logged for it. From that you can say where things stand
+    and offer the next step instead of asking the user to repeat themselves.
+
+    Args:
+        job_id: The saved posting, from list_jobs or the user's message.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
+
+    Returns:
+        The posting's header, requirement counts, the fit report's score and
+        gaps if analysed, the resume's validation state if written, and the
+        journal events for the job, newest first.
+    """
+    repo = repository()
+    user_id = current_user_id(tool_context)
+
+    job = repo.get_job(user_id, job_id)
+    if job is None:
+        raise ToolError(
+            f"No saved posting with id {job_id!r}. Call list_jobs to see what "
+            "is saved, or ask the user to paste the job description."
+        )
+
+    report = repo.get_fit_report(user_id, job_id)
+    resume = repo.get_resume(user_id, job_id)
+    events = sorted(
+        (e for e in repo.list_journal_entries(user_id) if e.job_id == job_id),
+        key=lambda e: e.occurred_at,
+        reverse=True,
+    )
+
+    return {
+        "status": "ok",
+        "job": {
+            "job_id": job.id,
+            "company": job.company,
+            "title": job.title,
+            "location": job.location,
+            "remote": job.remote,
+            "comp": job.comp,
+            "required_count": sum(1 for r in job.requirements if r.kind == "required"),
+            "preferred_count": sum(
+                1 for r in job.requirements if r.kind == "preferred"
+            ),
+        },
+        "fit_report": None
+        if report is None
+        else {
+            "score": report.score,
+            "summary": report.summary,
+            "met_count": len(report.met),
+            "unmet_count": len(report.unmet),
+            "blockers": [u.requirement.text for u in report.blockers],
+        },
+        "resume": None
+        if resume is None
+        else {
+            "validation_passed": bool(resume.validation and resume.validation.passed),
+            "section_count": len(resume.sections),
+        },
+        "application_events": [
+            {
+                "kind": e.kind,
+                "occurred_at": e.occurred_at.isoformat(),
+                "summary": e.summary,
+            }
+            for e in events
+        ],
+    }
+
+
 def list_jobs(tool_context: ToolContext | None = None) -> dict:
     """List the postings already saved, newest first.
 

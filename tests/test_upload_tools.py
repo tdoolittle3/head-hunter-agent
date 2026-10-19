@@ -421,6 +421,82 @@ def test_a_whole_role_can_be_imported_in_one_call() -> None:
     assert again["duplicates_skipped"] == 2
 
 
+def test_the_agents_reading_is_stored_beside_the_quote_not_instead_of_it() -> None:
+    upload = store_upload()
+    result = add_resume_accomplishment(
+        role_id=a_role(),
+        source_text=MENTOR,
+        upload_id=upload.id,
+        interpretation="Suggests informal leadership; worth asking about scope.",
+    )
+
+    assert result["status"] == "saved"
+    profile = JsonRepository().get_profile("local")
+    assert profile is not None
+    (acc,) = profile.accomplishments
+    assert acc.source_text == MENTOR, "the quote stays the user's exact words"
+    assert acc.interpretation.startswith("Suggests informal leadership")
+    (evidence,) = profile.evidence
+    assert "informal leadership" not in evidence.source_text, (
+        "the agent's reading must never become evidence"
+    )
+
+
+def test_batch_lines_carry_interpretations_and_tolerate_bare_strings() -> None:
+    upload = store_upload()
+    role_id = a_role()
+
+    result = add_resume_accomplishments(
+        role_id=role_id,
+        upload_id=upload.id,
+        lines=[
+            {"text": LINE, "interpretation": "A big efficiency win they owned."},
+            MENTOR,  # a bare string still works
+            {"interpretation": "no text key"},
+        ],
+    )
+
+    assert result["saved"] == 2
+    assert len(result["refused"]) == 1
+    assert "text" in result["refused"][0]["reason"]
+    profile = JsonRepository().get_profile("local")
+    assert profile is not None
+    by_text = {a.source_text: a for a in profile.accomplishments}
+    assert by_text[LINE].interpretation == "A big efficiency win they owned."
+    assert by_text[MENTOR].interpretation is None
+
+
+def test_a_resume_skill_can_be_recorded_before_the_user_rates_it() -> None:
+    upload = store_upload()
+
+    result = add_skill(
+        name="Airflow",
+        source_text="Skills: Python, Airflow, SQL",
+        upload_id=upload.id,
+    )
+
+    assert result["status"] == "added"
+    assert result["level"] is None
+    assert "ask the user" in result["still_needed"]
+
+    rated = add_skill(
+        name="Airflow",
+        level="strong",
+        source_text="I have run Airflow in production for years.",
+    )
+    assert rated["status"] == "updated"
+    assert rated["level"] == "strong"
+
+    unrated_again = add_skill(
+        name="Airflow",
+        source_text="Skills: Python, Airflow, SQL",
+        upload_id=upload.id,
+    )
+    assert unrated_again["level"] == "strong", (
+        "a call without a level must not erase the one the user gave"
+    )
+
+
 def test_the_same_job_from_a_second_resume_is_one_role() -> None:
     first = add_role(company="Acme Foods", title="Staff Engineer")
     again = add_role(

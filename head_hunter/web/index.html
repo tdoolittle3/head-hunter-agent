@@ -222,7 +222,9 @@
   .jb-band { display: flex; gap: 16px; align-items: center; margin-top: 18px;
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
   .jb-band .score { font-size: 26px; min-width: 64px; }
-  .jb-summary { margin: 0; color: var(--dim); font-size: 13px; }
+  .jb-summary { margin: 0; color: var(--dim); font-size: 13px; flex: 1; }
+  .jb-band button { flex: none; }
+  @media (max-width: 640px) { .jb-band { flex-wrap: wrap; } }
   #jb-detail .eyebrow { margin: 30px 0 4px; }
   .req { border-top: 1px solid var(--line); padding: 14px 0 10px; }
   .req h3 { margin: 0; font: 500 14px/1.5 var(--mono); color: var(--text); }
@@ -901,6 +903,22 @@
     }
   }
 
+  // The Jobs page handing the chat a posting to pick up. A fresh conversation,
+  // whose first message names the job_id so the agent can load where it stands.
+  function workOnJob(d) {
+    sessionId = null;
+    localStorage.removeItem(storeKey());
+    $("log").replaceChildren();
+    view = "chat";
+    layout();
+    const name = [d.title, d.company].filter(Boolean).join(" at ");
+    converse(
+      "Let's work on my saved job " + d.job_id + (name ? " (" + name + ")" : "")
+        + ". Check where it stands and pick up from there.",
+      "Work on: " + (name || d.job_id),
+    );
+  }
+
   async function openJob(jobId) {
     show("jb-error", false);
     try {
@@ -961,6 +979,9 @@
     band.appendChild(scoreChip(d.score));
     band.appendChild(el("p", "jb-summary", d.summary
       || "Not analysed yet. Ask for a fit analysis in the chat."));
+    const work = el("button", "primary", "Work on this in chat");
+    work.addEventListener("click", () => workOnJob(d));
+    band.appendChild(work);
     box.appendChild(band);
 
     if (d.met.length) {

@@ -38,8 +38,8 @@ These are product rules, not style preferences. Do not weaken them to make a tes
 Define these in Phase 0 even if some are unused until later:
 
 - `Profile`: identity, `goals`, `constraints` (location, comp floor, remote), `roles[]`, `accomplishments[]`, `skills[]`, `education[]`, `open_questions[]`.
-- `Accomplishment`: `id`, `role_id`, `situation`, `action`, `result`, `metrics[]`, `tools[]`, `evidence_id`, `source_text`.
-- `Skill`: `name`, `level`, `years`, `evidence_ids[]`, `last_used`.
+- `Accomplishment`: `id`, `role_id`, `situation`, `action`, `result`, `metrics[]`, `tools[]`, `evidence_id`, `source_text`, `interpretation` (the agent's labelled reading of the line — never evidence, never citable by a resume).
+- `Skill`: `name`, `level` (None until the user rates it), `years`, `evidence_ids[]`, `last_used`.
 - `JobPosting`: `id`, `source` (paste/upload/email/search), `company`, `title`, `location`, `remote`, `comp`, `requirements[]` (each `text`, `kind`: required/preferred, `category`), `raw_text`.
 - `FitReport`: `job_id`, `score` 0–100, `met[]` (requirement + evidence_ids), `unmet[]` (requirement + `stretch|blocker` + note), `summary`.
 - `Resume`: `job_id`, `sections[]` of `ResumeBullet` (`text`, `evidence_ids[]`), `validation` result.

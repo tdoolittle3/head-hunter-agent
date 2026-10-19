@@ -84,6 +84,8 @@ class Accomplishment(HeadHunterModel):
     Carries ``evidence_id`` and a copy of the user's ``source_text``. The
     Interviewer records these only from what the user actually said; anything it
     merely infers becomes an :class:`OpenQuestion` instead (AGENTS.md rule 1).
+    The one labelled exception is ``interpretation``: the agent's own reading of
+    the entry, kept beside the quote but never treated as the user's words.
     """
 
     id: str = Field(
@@ -104,13 +106,29 @@ class Accomplishment(HeadHunterModel):
     source_text: str = Field(
         description="The user's own words. A convenience copy of the Evidence text."
     )
+    interpretation: str | None = Field(
+        default=None,
+        description=(
+            "The agent's own reading of what this line shows — likely scope, "
+            "what changed, why it matters. Plainly an interpretation, not the "
+            "user's words: a resume can never cite it, and the validator does "
+            "not read it."
+        ),
+    )
 
 
 class Skill(HeadHunterModel):
     """A capability the user has, backed by at least one piece of evidence."""
 
     name: str = Field(description="The skill, e.g. 'Kubernetes' or 'contract law'.")
-    level: SkillLevel = Field(description="How strong they are with it.")
+    level: SkillLevel | None = Field(
+        default=None,
+        description=(
+            "How strong they are with it. None until the user has placed it "
+            "on the ladder — a resume names skills but not how well they are "
+            "known, so a skill can be recorded before it is rated."
+        ),
+    )
     years: float | None = Field(default=None, description="Years of real use.")
     evidence_ids: list[EvidenceId] = Field(
         min_length=1,
