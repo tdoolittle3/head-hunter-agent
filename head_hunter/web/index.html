@@ -929,6 +929,10 @@
     URL.revokeObjectURL(url);
   }
 
+  document.addEventListener("hh-download", (event) => {
+    download(event.detail).catch((error) => addMessage(error.message, "err"));
+  });
+
   function requirementBlock(item, tag) {
     const req = el("div", "req");
     const head = el("h3", null, item.requirement);

@@ -7,7 +7,8 @@
 //
 // Covered: paragraphs, #..#### headings, **bold**, *italic*/_italic_,
 // `code`, ``` fenced blocks, - and 1. lists, > quotes, --- rules,
-// pipe tables, and [text](https://...) links (http/https only).
+// pipe tables, and [text](https://...) links (http/https only), plus links
+// to a job's own resume download, which the page fetches with the user's token.
 (function () {
   "use strict";
 
@@ -16,7 +17,8 @@
     "|\\*\\*([^*]+)\\*\\*" +                   // **bold**
     "|\\*([^*]+)\\*" +                         // *italic*
     "|\\b_([^_]+)_\\b" +                       // _italic_
-    "|\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)"  // [text](https://url)
+    "|\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+" +    // [text](https://url)
+    "|\\/api\\/jobs\\/[\\w-]+\\/resume\\.(?:docx|md))\\)"  // or a resume download
   );
 
   function inline(parent, text) {
@@ -40,9 +42,19 @@
         inline(el, m[4] !== undefined ? m[4] : m[5]);
       } else {
         el = document.createElement("a");
-        el.href = m[7];
-        el.target = "_blank";
-        el.rel = "noopener noreferrer";
+        if (m[7].charAt(0) === "/") {
+          // A download of the user's own file needs their sign-in token, which a
+          // plain link cannot carry, so the page performs it (see index.html).
+          el.href = "#";
+          el.addEventListener("click", function (event) {
+            event.preventDefault();
+            document.dispatchEvent(new CustomEvent("hh-download", { detail: m[7] }));
+          });
+        } else {
+          el.href = m[7];
+          el.target = "_blank";
+          el.rel = "noopener noreferrer";
+        }
         inline(el, m[6]);
       }
       parent.appendChild(el);
