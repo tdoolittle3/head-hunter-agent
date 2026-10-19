@@ -14,7 +14,7 @@ from difflib import SequenceMatcher
 
 from google.adk.tools import ToolContext
 
-from head_hunter.doc_text import is_excerpt, normalize_for_match
+from head_hunter.doc_text import closest_passage, is_excerpt, normalize_for_match
 from head_hunter.schemas import (
     Accomplishment,
     Education,
@@ -87,7 +87,9 @@ def _upload_for_quote(
             f"source_text is not a verbatim excerpt of {upload.filename!r}. Quote "
             "the words the resume actually uses, exactly, or leave out upload_id "
             "and use what the user told you. If the resume does not say it, ask "
-            "the user."
+            "the user. The file reads, near there: "
+            f'"{closest_passage(source_text, upload.text)}" -- copy from that '
+            "and try again before asking the user."
         )
     return upload
 

@@ -19,6 +19,7 @@ import re
 import unicodedata
 import zipfile
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import PurePosixPath, PureWindowsPath
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -221,7 +222,32 @@ def normalize_for_match(text: str) -> str:
     return " ".join(text.casefold().split())
 
 
+def _compact(text: str) -> str:
+    """Normalise, then drop spaces and hyphens, which line wrapping scatters.
+
+    A PDF wraps "LLM-assisted" as "LLM-" / "assisted" and splits long words at
+    a hyphen, and the text layer keeps the break. Letters and digits keep their
+    order, so a claim cannot change meaning, only where the breaks were.
+    """
+    flat = normalize_for_match(text).replace("­", "")
+    return "".join(c for c in flat if not c.isspace() and c != "-")
+
+
 def is_excerpt(quote: str, document_text: str) -> bool:
     """Say whether ``quote`` appears in ``document_text``, up to layout noise."""
-    needle = normalize_for_match(quote)
-    return bool(needle) and needle in normalize_for_match(document_text)
+    needle = _compact(quote)
+    return bool(needle) and needle in _compact(document_text)
+
+
+def closest_passage(quote: str, document_text: str, width: int = 400) -> str:
+    """The stretch of the document that best matches ``quote``, for error messages.
+
+    Shows the model what the file actually says where its quote went wrong, so it
+    can copy that instead of guessing.
+    """
+    doc = document_text.casefold()
+    match = SequenceMatcher(
+        None, doc, quote.casefold(), autojunk=False
+    ).find_longest_match(0, len(doc), 0, len(quote))
+    start = max(0, match.a - match.b - 20)
+    return " ".join(document_text[start : start + max(width, len(quote) + 60)].split())

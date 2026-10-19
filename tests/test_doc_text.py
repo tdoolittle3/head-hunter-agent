@@ -297,3 +297,14 @@ def test_quote_style_dash_style_and_bullets_do_not_matter() -> None:
 
 def test_normalising_keeps_every_word_and_number() -> None:
     assert normalize_for_match("  Cut 9  days\u2014to 2 ") == "cut 9 days-to 2"
+
+
+def test_a_quote_survives_pdf_line_wrapping_and_hyphen_breaks() -> None:
+    from head_hunter.doc_text import closest_passage, is_excerpt
+
+    text = (
+        "Built LLM-\nassisted invoice extraction into Quick\nBooks and a docs-\nsite."
+    )
+    assert is_excerpt("Built LLM-assisted invoice extraction into QuickBooks", text)
+    assert not is_excerpt("Built invoice extraction into SAP", text)
+    assert "LLM" in closest_passage("Built LLM-assisted invoice extraction", text)
