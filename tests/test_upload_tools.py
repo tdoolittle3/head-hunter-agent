@@ -16,7 +16,9 @@ from head_hunter.storage import JsonRepository
 from head_hunter.tools import (
     ToolError,
     add_accomplishment,
+    add_education,
     add_resume_accomplishment,
+    add_resume_accomplishments,
     add_role,
     add_skill,
     load_profile,
@@ -396,3 +398,51 @@ def test_a_genuinely_new_line_in_a_second_resume_is_added() -> None:
 
     assert new["status"] == "saved"
     assert _accomplishment_count() == 2
+
+
+def test_a_whole_role_can_be_imported_in_one_call() -> None:
+    upload = store_upload()
+    role_id = a_role()
+
+    result = add_resume_accomplishments(
+        role_id=role_id,
+        upload_id=upload.id,
+        lines=[LINE, MENTOR, "Managed a budget of four million dollars across regions"],
+    )
+
+    assert result["saved"] == 2
+    assert len(result["refused"]) == 1
+    assert _accomplishment_count() == 2
+
+    again = add_resume_accomplishments(
+        role_id=role_id, upload_id=upload.id, lines=[LINE, MENTOR]
+    )
+    assert again["saved"] == 0
+    assert again["duplicates_skipped"] == 2
+
+
+def test_the_same_job_from_a_second_resume_is_one_role() -> None:
+    first = add_role(company="Acme Foods", title="Staff Engineer")
+    again = add_role(
+        company="acme  foods", title="Staff Engineer", summary="Owned billing."
+    )
+
+    assert again["status"] == "exists"
+    assert again["role_id"] == first["role_id"]
+    profile = JsonRepository().get_profile("local")
+    assert profile is not None
+    (role,) = profile.roles
+    assert role.summary == "Owned billing."
+
+
+def test_education_is_recorded_once_and_updated_on_repeat() -> None:
+    add_education(institution="State University", credential="B.S.")
+    again = add_education(
+        institution="State University", credential="B.S.", field="Physics"
+    )
+
+    assert again["status"] == "exists"
+    profile = JsonRepository().get_profile("local")
+    assert profile is not None
+    (edu,) = profile.education
+    assert edu.field == "Physics"
