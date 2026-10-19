@@ -193,6 +193,25 @@ def test_a_requirement_the_profile_never_mentions_fails(profile: Profile) -> Non
     assert "Secret" in reason(profile, text, ["ev-acme"])
 
 
+def test_the_agents_interpretation_is_not_part_of_the_evidence(
+    profile: Profile,
+) -> None:
+    """A term that exists only in the agent's reading of a line must not pass.
+
+    ``interpretation`` is the one field on an Accomplishment that is the
+    agent's words rather than the user's. If it ever joins the validation
+    corpus, the agent can launder an inference into a resume by writing it
+    there first.
+    """
+    profile.accomplishments[
+        0
+    ].interpretation = (
+        "Reads like a Kubernetes-era platform migration they drove themselves."
+    )
+    text = "Rewrote the billing pipeline on Kubernetes."
+    assert "Kubernetes" in reason(profile, text, ["ev-acme"])
+
+
 def test_an_unknown_evidence_id_fails(profile: Profile) -> None:
     text = "Rewrote the billing pipeline."
     assert "ev-nope" in reason(profile, text, ["ev-nope"])

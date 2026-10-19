@@ -506,6 +506,7 @@ def add_resume_accomplishment(
     upload_id: str,
     tools: list[str] | None = None,
     keep_both: bool = False,
+    interpretation: str | None = None,
     tool_context: ToolContext | None = None,
 ) -> dict:
     """Record one line of the user's uploaded resume as an accomplishment.
@@ -528,6 +529,10 @@ def add_resume_accomplishment(
         tools: Technologies or systems the line names.
         keep_both: Record the line even though a similar one exists, because it
             adds something the earlier wording lacks (a number, a tool, a scope).
+        interpretation: Your own one-line reading of what the line shows — what
+            it seems to mean, what scope it implies, what you would want to ask
+            about. Stored beside the quote, clearly labelled as yours: it is
+            never evidence and a resume can never cite it.
         tool_context: Supplied by the system to say whose records these are.
             Never fill this in.
 
@@ -580,6 +585,7 @@ def add_resume_accomplishment(
         tools=tools or [],
         evidence_id=evidence.id,
         source_text=cleaned,
+        interpretation=interpretation,
     )
     profile.accomplishments.append(accomplishment)
     repository().save_profile(profile)
@@ -595,7 +601,7 @@ def add_resume_accomplishment(
 def add_resume_accomplishments(
     role_id: str,
     upload_id: str,
-    lines: list[str],
+    lines: list[dict],
     tool_context: ToolContext | None = None,
 ) -> dict:
     """Record many lines of an uploaded resume under one role in a single call.
@@ -605,10 +611,16 @@ def add_resume_accomplishments(
     so one bad quote does not stop the rest. Repeats are skipped and near-repeats
     held back, exactly as in add_resume_accomplishment.
 
+    Each line is a dict with these keys:
+      - ``text``: the resume line or bullet, copied exactly as written
+      - ``interpretation``: your own one-line reading of what the line shows,
+        optional. Stored beside the quote, labelled as yours, never evidence.
+      - ``tools``: technologies or systems the line names, optional.
+
     Args:
         role_id: The role these lines belong to, from add_role or load_profile.
         upload_id: The upload they came from, from load_uploaded_resume.
-        lines: Resume bullets, each copied exactly as written.
+        lines: The resume bullets, each a dict as described above.
         tool_context: Supplied by the system to say whose records these are.
             Never fill this in.
 
@@ -619,25 +631,40 @@ def add_resume_accomplishments(
     saved = duplicates = 0
     similar: list[dict] = []
     refused: list[dict] = []
-    for line in lines:
+    for item in lines:
+        if isinstance(item, str):
+            item = {"text": item}
+        if not isinstance(item, dict) or not str(item.get("text", "")).strip():
+            refused.append(
+                {
+                    "line": str(item),
+                    "reason": "Each line must be a dict with at least a 'text' key.",
+                }
+            )
+            continue
+        text = str(item["text"])
+        interpretation = item.get("interpretation")
+        tools = item.get("tools")
         try:
             result = add_resume_accomplishment(
                 role_id=role_id,
-                source_text=line,
+                source_text=text,
                 upload_id=upload_id,
+                tools=list(tools) if tools else None,
+                interpretation=str(interpretation) if interpretation else None,
                 tool_context=tool_context,
             )
         except ToolError as error:
             if "No role with id" in str(error):
                 raise
-            refused.append({"line": line, "reason": str(error)})
+            refused.append({"line": text, "reason": str(error)})
             continue
         if result["status"] == "saved":
             saved += 1
         elif result["status"] == "duplicate":
             duplicates += 1
         else:
-            similar.append({"line": line, "existing_text": result["existing_text"]})
+            similar.append({"line": text, "existing_text": result["existing_text"]})
 
     return {
         "saved": saved,
@@ -650,8 +677,8 @@ def add_resume_accomplishments(
 
 def add_skill(
     name: str,
-    level: str,
     source_text: str,
+    level: str | None = None,
     years: float | None = None,
     last_used: str | None = None,
     upload_id: str | None = None,
@@ -662,10 +689,16 @@ def add_skill(
     Do not add a skill just because it appears in a job description, or because
     it seems implied by their role. It goes in only if they claimed it.
 
+    A skill from an uploaded resume can be recorded before the user has rated
+    it: leave ``level`` out, record the skill with the resume's words, and ask
+    for the level afterwards. Calling again with the same name fills the level
+    in. Never guess a level — it comes from the user or stays unset.
+
     Args:
         name: The skill, e.g. 'Airflow' or 'contract negotiation'.
-        level: One of aware, working, strong, expert.
         source_text: The user's own words about this skill.
+        level: One of aware, working, strong, expert — only once the user has
+            placed it on that scale. Omit it until they have.
         years: Years of real use.
         last_used: Roughly when last used, e.g. '2024' or 'current'.
         upload_id: Set this when source_text is quoted from the user's uploaded
@@ -675,12 +708,14 @@ def add_skill(
             Never fill this in.
 
     Returns:
-        Confirmation and the evidence id backing the skill.
+        Confirmation and the evidence id backing the skill. ``level`` is None
+        when the user has not rated it yet; that is a question to ask.
     """
-    if level not in SKILL_LEVELS:
+    if level is not None and level not in SKILL_LEVELS:
         raise ToolError(
             f"level must be one of {', '.join(SKILL_LEVELS)}; got {level!r}. "
-            "If the user was vague, ask them to place it on that scale."
+            "If the user was vague, ask them to place it on that scale, or "
+            "leave level out until they have."
         )
 
     profile = _load_or_create(tool_context)
@@ -692,13 +727,15 @@ def add_skill(
 
     existing = next((s for s in profile.skills if s.name.lower() == name.lower()), None)
     if existing is not None:
-        existing.level = level
+        if level is not None:
+            existing.level = level
         existing.evidence_ids.append(evidence.id)
         if years is not None:
             existing.years = years
         if last_used is not None:
             existing.last_used = last_used
         action = "updated"
+        stored_level = existing.level
     else:
         profile.skills.append(
             Skill(
@@ -710,14 +747,20 @@ def add_skill(
             )
         )
         action = "added"
+        stored_level = level
 
     repository().save_profile(profile)
-    return {
+    result = {
         "status": action,
         "skill": name,
-        "level": level,
+        "level": stored_level,
         "evidence_id": evidence.id,
     }
+    if stored_level is None:
+        result["still_needed"] = (
+            "level: ask the user to place it on aware / working / strong / expert"
+        )
+    return result
 
 
 def add_open_question(

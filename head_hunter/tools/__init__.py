@@ -10,7 +10,12 @@ from head_hunter.tools.fit_tools import (
     load_job_and_profile,
     save_fit_report,
 )
-from head_hunter.tools.job_tools import list_jobs, prepare_job_text, save_job_posting
+from head_hunter.tools.job_tools import (
+    get_job_status,
+    list_jobs,
+    prepare_job_text,
+    save_job_posting,
+)
 from head_hunter.tools.journal_tools import (
     get_application_funnel,
     list_applications,
@@ -60,7 +65,7 @@ COACH_TOOLS = [
     get_application_funnel,
 ]
 
-COORDINATOR_TOOLS = [load_profile, list_jobs]
+COORDINATOR_TOOLS = [load_profile, list_jobs, get_job_status]
 
 __all__ = [
     "COACH_TOOLS",
@@ -79,6 +84,7 @@ __all__ = [
     "add_skill",
     "get_application_funnel",
     "get_fit_report",
+    "get_job_status",
     "list_applications",
     "list_jobs",
     "load_job_and_profile",

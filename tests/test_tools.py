@@ -17,9 +17,11 @@ from head_hunter.tools import (
     add_open_question,
     add_role,
     add_skill,
+    get_job_status,
     list_jobs,
     load_job_and_profile,
     load_profile,
+    log_application_event,
     prepare_job_text,
     save_fit_report,
     save_job_posting,
@@ -237,6 +239,60 @@ def test_saved_posting_keeps_the_raw_text_and_is_listed() -> None:
 
     stored = JsonRepository().get_job("local", job_id)
     assert stored.raw_text == POSTING, "the untouched original must be kept"
+
+
+# --- Picking up a saved job -------------------------------------------------
+
+
+def test_job_status_needs_a_real_job() -> None:
+    with pytest.raises(ToolError, match="No saved posting"):
+        get_job_status("job-nope")
+
+
+def test_job_status_reports_a_fresh_posting_as_untouched() -> None:
+    job_id = seeded_job()["job_id"]
+
+    status = get_job_status(job_id)
+
+    assert status["job"]["company"] == "Globex"
+    assert status["job"]["required_count"] == 2
+    assert status["job"]["preferred_count"] == 1
+    assert status["fit_report"] is None
+    assert status["resume"] is None
+    assert status["application_events"] == []
+
+
+def test_job_status_gathers_the_report_and_the_journal() -> None:
+    job_id, loaded = seeded_profile_and_job()
+    reqs = {r["text"]: r["requirement_id"] for r in loaded["job"]["requirements"]}
+    evidence_id = loaded["profile"]["evidence"][0]["evidence_id"]
+    save_fit_report(
+        job_id=job_id,
+        met=[
+            {
+                "requirement_id": reqs["5+ years building data pipelines"],
+                "evidence_ids": [evidence_id],
+            },
+            {"requirement_id": reqs["BigQuery"], "evidence_ids": [evidence_id]},
+        ],
+        unmet=[
+            {
+                "requirement_id": reqs["Active Secret clearance"],
+                "gap": "blocker",
+                "note": "No clearance on record.",
+            }
+        ],
+        summary="Strong on pipelines; the clearance is a hard stop.",
+    )
+    log_application_event(kind="applied", summary="Sent the resume.", job_id=job_id)
+
+    status = get_job_status(job_id)
+
+    assert status["fit_report"]["blockers"] == ["Active Secret clearance"]
+    assert status["fit_report"]["met_count"] == 2
+    assert status["resume"] is None
+    (event,) = status["application_events"]
+    assert event["kind"] == "applied"
 
 
 # --- Fit analysis ---------------------------------------------------------

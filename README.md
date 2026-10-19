@@ -94,14 +94,23 @@ Then open Web Preview on port 8000 and talk to the Head Hunter.
 3. Paste a job description straight into the chat.
 4. Ask for a fit analysis.
 5. Ask for a resume for that job.
+6. Later, open the **Jobs** page, click the posting, and press **Work on this
+   in chat**: it starts a conversation that already knows which job you mean
+   and where it stands — scored or not, resume written or not, applied or not.
 
 An uploaded resume is a head start, not a shortcut around the rules. The agent
-reads it, checks the list of roles with you, and records each line it can quote
-**exactly**; the quote is checked against the file in plain Python, so a line the
-resume does not contain is refused. It asks you for the levels of your skills and
-for the numbers and results a resume leaves out. Only the extracted text is kept,
-never the file, and scanned or photographed resumes (no selectable text) cannot be
-read yet: paste the text instead.
+reads it and records everything it states in the same turn — roles, every
+substantive line, the skills it names, degrees and certifications — then says
+what it saved so you can correct it. Each line is recorded as an **exact
+quote**, checked against the file in plain Python, so a line the resume does
+not contain is refused. Beside each quote the agent keeps its own one-line
+reading of what the line seems to show; that reading is labelled as the
+agent's, is never evidence, and a resume can never cite it — it is the question
+list for the interview that follows. Skills land unrated until you place them
+on the scale, and the agent then asks for levels and for the numbers and
+results a resume leaves out. Only the extracted text is kept, never the file,
+and scanned or photographed resumes (no selectable text) cannot be read yet:
+paste the text instead.
 
 Everything lands as readable JSON under `data/` -- open the files and check
 them. `data/profile.json` should contain your actual words under `evidence`;
