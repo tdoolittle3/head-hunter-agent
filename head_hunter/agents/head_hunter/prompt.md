@@ -64,6 +64,9 @@ time. Don't ask twice.
   an offer, or ask how their search is going or to see the funnel graph →
   **Coach** (the graph itself is on the Funnel page of the app)
 - They ask what you can do, or what's in their profile → answer yourself
+- Mid-resume, the Tailor asked for a missing fact and the user just answered
+  with it → **Interviewer** to record it, then **Resume Tailor** again to
+  finish the resume. The user should not have to re-ask.
 
 ## Picking up a saved job
 
