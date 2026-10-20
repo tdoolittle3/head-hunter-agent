@@ -21,7 +21,10 @@ class ResumeBullet(HeadHunterModel):
     text: str = Field(description="The bullet as it will appear on the page.")
     evidence_ids: list[EvidenceId] = Field(
         min_length=1,
-        description="Evidence supporting every claim in the text. Never empty.",
+        description=(
+            "Evidence supporting every claim in the text — or, for an "
+            "education line, the education entry's id. Never empty."
+        ),
     )
 
 

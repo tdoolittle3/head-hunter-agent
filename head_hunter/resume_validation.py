@@ -18,6 +18,11 @@ the same statement. Widening the corpus this far and no further is what lets a
 bullet say "9 days" when the user said "nine days", while still failing a bullet
 that reaches into a *different* role's evidence for a company name.
 
+An Education line is the one kind of bullet with no quote behind it: the
+``Education`` entry itself is what the Interviewer recorded, so a bullet may
+cite the entry's ``edu-`` id and claim exactly the fields the entry holds --
+institution, credential, field of study, dates -- and nothing more.
+
 **It fails closed.** An unusual verb the stop-list does not know can be flagged
 as an untraceable proper noun. That is the error we want to make: the failure
 message names the exact word, the Resume Tailor rewords the bullet, and nothing
@@ -366,7 +371,11 @@ def _untraceable_terms(text: str, corpus: set[str], known_names: set[str]) -> li
 def _cited_texts(
     profile: Profile, evidence_ids: list[str]
 ) -> tuple[list[str], list[str]]:
-    """Gather everything the cited evidence supports.
+    """Gather everything the cited references support.
+
+    A citation is usually an Evidence id. It may also be an Education id,
+    because an education entry is itself the record the user provided -- there
+    is no quote behind it to cite.
 
     Args:
         profile: The career profile the citations point into.
@@ -376,11 +385,26 @@ def _cited_texts(
         The supporting texts, and the ids that are not in the profile at all.
     """
     cited = set(evidence_ids)
-    missing = [eid for eid in evidence_ids if profile.evidence_by_id(eid) is None]
+    education = {entry.id: entry for entry in profile.education}
+    missing = [
+        eid
+        for eid in evidence_ids
+        if profile.evidence_by_id(eid) is None and eid not in education
+    ]
 
     texts: list[str] = [
         evidence.source_text for evidence in profile.evidence if evidence.id in cited
     ]
+
+    for entry_id in cited & education.keys():
+        entry = education[entry_id]
+        texts += [
+            entry.institution,
+            entry.credential or "",
+            entry.field or "",
+            entry.start_date or "",
+            entry.end_date or "",
+        ]
 
     roles = {role.id: role for role in profile.roles}
     for accomplishment in profile.accomplishments:
