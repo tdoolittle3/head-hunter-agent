@@ -166,6 +166,28 @@ def _conversation_messages(events: list[Any]) -> list[ConversationMessage]:
     return messages
 
 
+def _sessions_that_touched(repo: Repository, user_id: str, job_id: str) -> set[str]:
+    """The chats stamped on the records that exist for one posting.
+
+    Chats from before tools noted job ids in session state still left their
+    session id on what they wrote -- the posting itself, its fit report, its
+    resume, its journal events -- so the Jobs page can list them without any
+    migration.
+    """
+    records = (
+        repo.get_job(user_id, job_id),
+        repo.get_fit_report(user_id, job_id),
+        repo.get_resume(user_id, job_id),
+    )
+    touched = {r.session_id for r in records if r is not None and r.session_id}
+    touched.update(
+        entry.session_id
+        for entry in repo.list_journal_entries(user_id)
+        if entry.job_id == job_id and entry.session_id
+    )
+    return touched
+
+
 class ChatResponse(BaseModel):
     """What the agent said, and the session to continue it in."""
 
@@ -677,8 +699,9 @@ def create_app(
         """The caller's recent conversations, newest first, empty ones left out.
 
         Archived chats are hidden; with ``archived=true`` they are the only
-        ones listed. With ``job_id``, only the chats started from that posting
-        — the Jobs page uses this to list a job's conversations beside it.
+        ones listed. With ``job_id``, only the chats about that posting — the
+        one that saved it, ones started from it, and any that worked on it —
+        one list, the way the Jobs page shows it.
 
         Listings come back without events, so each candidate is fetched in
         full for its title -- bounded by ``MAX_CONVERSATIONS_LISTED``.
@@ -688,13 +711,18 @@ def create_app(
         newest_first = sorted(
             listing.sessions, key=lambda s: s.last_update_time or 0, reverse=True
         )
+        touched: set[str] = set()
         try:
+            repo = open_repository()
             labels = {
                 job.id: " at ".join(p for p in (job.title, job.company) if p) or job.id
-                for job in open_repository().list_jobs(user.uid)
+                for job in repo.list_jobs(user.uid)
             }
+            if job_id is not None:
+                touched = _sessions_that_touched(repo, user.uid, job_id)
         except StorageError:
-            # The label is a convenience; the list still works without it.
+            # Labels and record-stamped chats are conveniences; the state
+            # matches below still work without them.
             logger.exception("Could not label conversations for %s", user.uid)
             labels = {}
         rows = []
@@ -710,7 +738,11 @@ def create_app(
             if bool(state.get("archived")) != archived:
                 continue
             session_job = state.get("job_id")
-            if job_id is not None and session_job != job_id:
+            if job_id is not None and not (
+                session_job == job_id
+                or job_id in (state.get("job_ids") or [])
+                or session.id in touched
+            ):
                 continue
             messages = _conversation_messages(full.events)
             opener = next((m.text for m in messages if m.author == "user"), None)

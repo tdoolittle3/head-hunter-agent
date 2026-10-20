@@ -17,6 +17,7 @@ from head_hunter.tools._base import (
     ToolError,
     current_session_id,
     current_user_id,
+    remember_job_in_session,
     repository,
 )
 
@@ -140,6 +141,7 @@ def save_job_posting(
         session_id=current_session_id(tool_context),
     )
     repo.save_job(job, create_only=True)
+    remember_job_in_session(tool_context, job.id)
 
     return {
         "status": "saved",
@@ -180,6 +182,7 @@ def get_job_status(job_id: str, tool_context: ToolContext | None = None) -> dict
             f"No saved posting with id {job_id!r}. Call list_jobs to see what "
             "is saved, or ask the user to paste the job description."
         )
+    remember_job_in_session(tool_context, job_id)
 
     report = repo.get_fit_report(user_id, job_id)
     resume = repo.get_resume(user_id, job_id)

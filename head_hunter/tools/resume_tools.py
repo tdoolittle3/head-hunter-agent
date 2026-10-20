@@ -24,6 +24,7 @@ from head_hunter.tools._base import (
     ToolError,
     current_session_id,
     current_user_id,
+    remember_job_in_session,
     repository,
 )
 
@@ -54,6 +55,7 @@ def load_tailoring_context(
             f"No saved posting with id {job_id!r}. Call list_jobs to see what "
             "is available, or ask the user to paste the description."
         )
+    remember_job_in_session(tool_context, job_id)
 
     profile = repo.get_profile(user_id)
     if profile is None:
@@ -246,6 +248,7 @@ def save_resume(
     )
     resume.validation = validate_resume(resume, profile)
     repo.save_resume(resume)
+    remember_job_in_session(tool_context, job_id)
 
     result = resume.validation
     return {
@@ -293,6 +296,7 @@ def render_resume(job_id: str, tool_context: ToolContext | None = None) -> dict:
         raise ToolError(
             f"No resume has been written for {job_id!r} yet. Call save_resume first."
         )
+    remember_job_in_session(tool_context, job_id)
     if resume.validation is None or not resume.validation.passed:
         failed = resume.validation.failures if resume.validation else []
         raise ToolError(

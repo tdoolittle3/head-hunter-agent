@@ -20,6 +20,7 @@ from head_hunter.tools._base import (
     ToolError,
     current_session_id,
     current_user_id,
+    remember_job_in_session,
     repository,
 )
 
@@ -108,6 +109,7 @@ def log_application_event(
             )
         company = company or job.company
         title = title or job.title
+        remember_job_in_session(tool_context, job_id)
     elif not (company and company.strip() and title and title.strip()):
         raise ToolError(
             "Say which application this is: a job_id from list_jobs, or both the "

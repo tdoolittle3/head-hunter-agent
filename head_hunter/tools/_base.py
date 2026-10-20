@@ -93,3 +93,20 @@ def current_session_id(tool_context: ToolContext | None = None) -> str | None:
     """
     session = getattr(tool_context, "session", None)
     return getattr(session, "id", None)
+
+
+def remember_job_in_session(tool_context: ToolContext | None, job_id: str) -> None:
+    """Note in the chat's own state that this chat worked on one saved job.
+
+    The Jobs page lists every chat whose state names the posting, so each tool
+    that reads or writes one calls this -- that is what makes the list "chats
+    about this job" rather than only "chats started from it". The write goes
+    through the tool call's event, the one path both session backends persist.
+    Outside a session there is no state and nothing to note.
+    """
+    state = getattr(tool_context, "state", None)
+    if state is None:
+        return
+    noted = list(state.get("job_ids") or [])
+    if job_id not in noted:
+        state["job_ids"] = noted + [job_id]
