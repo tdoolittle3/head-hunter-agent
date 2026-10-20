@@ -30,6 +30,7 @@ from head_hunter.tools._base import (
     ToolError,
     current_session_id,
     current_user_id,
+    remember_job_in_session,
     repository,
 )
 
@@ -57,6 +58,7 @@ def load_job_and_profile(job_id: str, tool_context: ToolContext | None = None) -
             f"No saved posting with id {job_id!r}. Call list_jobs to see what "
             "is available, or ask the user to paste the description."
         )
+    remember_job_in_session(tool_context, job_id)
 
     profile = repo.get_profile(user_id)
     if profile is None:
@@ -303,6 +305,7 @@ def save_fit_report(
         session_id=current_session_id(tool_context),
     )
     repo.save_fit_report(report)
+    remember_job_in_session(tool_context, job_id)
 
     return {
         "status": "saved",
@@ -332,4 +335,5 @@ def get_fit_report(job_id: str, tool_context: ToolContext | None = None) -> dict
             "status": "none",
             "message": f"No fit report has been run for {job_id!r} yet.",
         }
+    remember_job_in_session(tool_context, job_id)
     return {"status": "ok", "report": report.model_dump(mode="json")}

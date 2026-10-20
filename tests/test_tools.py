@@ -241,6 +241,42 @@ def test_saved_posting_keeps_the_raw_text_and_is_listed() -> None:
     assert stored.raw_text == POSTING, "the untouched original must be kept"
 
 
+class _FakeSession:
+    id = "sess-123"
+
+
+class _FakeToolContext:
+    """Just enough of ADK's ToolContext: the session and its state mapping."""
+
+    def __init__(self) -> None:
+        self.session = _FakeSession()
+        self.state: dict = {}
+
+
+def test_saving_a_posting_links_the_chat_and_the_job_both_ways() -> None:
+    context = _FakeToolContext()
+
+    saved = save_job_posting(
+        raw_text=POSTING,
+        requirements=[{"text": "x", "kind": "required", "category": "skill"}],
+        tool_context=context,  # type: ignore[arg-type]
+    )
+
+    stored = JsonRepository().get_job("local", saved["job_id"])
+    assert stored.session_id == "sess-123"
+    assert context.state["job_ids"] == [saved["job_id"]]
+
+
+def test_reading_a_job_notes_it_in_the_chats_state_once() -> None:
+    job_id = seeded_job()["job_id"]
+    context = _FakeToolContext()
+
+    get_job_status(job_id, tool_context=context)
+    get_job_status(job_id, tool_context=context)
+
+    assert context.state["job_ids"] == [job_id]
+
+
 # --- Picking up a saved job -------------------------------------------------
 
 

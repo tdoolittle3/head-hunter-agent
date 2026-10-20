@@ -738,6 +738,41 @@ def test_a_jobs_conversations_can_be_listed_apart(
     assert untagged["job_id"] is None and untagged["job_label"] is None
 
 
+def test_a_jobs_list_includes_the_chat_that_saved_it(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    """The posting remembers the chat it was pasted in; that chat is listed."""
+    saver = seed_conversation(runner, "alice-uid", "paste a JD, save it")
+    seed_conversation(runner, "alice-uid", "an unrelated chat")
+    job_id = seed_job(session_id=saver)
+
+    rows = client.get(
+        f"/api/conversations?job_id={job_id}", headers=bearer("alice-token")
+    ).json()
+
+    assert [r["session_id"] for r in rows] == [saver]
+
+
+def test_a_jobs_list_includes_chats_that_worked_on_it(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    """One list: chats started from the job and chats whose tools touched it."""
+    job_id = seed_job()
+    started = seed_conversation(
+        runner, "alice-uid", "started from the job", state={"job_id": job_id}
+    )
+    mentioned = seed_conversation(
+        runner, "alice-uid", "asked about the job later", state={"job_ids": [job_id]}
+    )
+    seed_conversation(runner, "alice-uid", "a chat about something else")
+
+    rows = client.get(
+        f"/api/conversations?job_id={job_id}", headers=bearer("alice-token")
+    ).json()
+
+    assert {r["session_id"] for r in rows} == {started, mentioned}
+
+
 # Refusing to start unsafely -----------------------------------------------
 
 

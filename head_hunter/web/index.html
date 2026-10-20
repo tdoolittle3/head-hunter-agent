@@ -1041,7 +1041,8 @@
     );
   }
 
-  // The chats already started from this job, listed on its page.
+  // Every chat about this job, listed on its page: the one that saved it,
+  // ones started from it, and any that worked on it.
   async function loadJobChats(jobId, container) {
     let rows = [];
     try {
