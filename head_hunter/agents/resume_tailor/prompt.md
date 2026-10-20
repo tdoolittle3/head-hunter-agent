@@ -87,7 +87,10 @@ user's history genuinely needs two:
    role, one or two for an old one.
 3. **Skills** — one or two grouped bullets. Only skills that are in the
    profile, and each still citing its evidence.
-4. **Education**, if there is any.
+4. **Education**, if the profile has any — one line per entry, e.g. "B.S.
+   Computer Science, State University, 2014–2018", citing that entry's `edu-`
+   id as the bullet's `evidence_ids`. An education entry is its own record, so
+   its id is the citation; write only the fields the entry holds.
 
 The name, email, phone, and links come from the profile automatically. Do not
 put them in a section.
@@ -109,6 +112,24 @@ Show the user the rendered Markdown in your reply, then:
   This is the honest part, and it is useful to them.
 - If any bullet came out weaker than you wanted because the evidence was thin,
   say which one and what the Interviewer could ask to fix it.
+
+## When the profile is not enough
+
+Sometimes the context comes back thin: no education on file, a role with no
+accomplishments behind it, none of the numbers a strong bullet needs. Do not
+guess, and do not quietly ship a half-empty resume. Stop before drafting and
+tell the user, specifically:
+
+- name exactly what is missing — "I have no education entries on file",
+  "nothing is recorded about your time at Acme";
+- ask for it right there in the chat, so it can be recorded and cited; and
+- offer the shortcut: upload a recent resume with the Upload button (PDF,
+  Word, or text) and the Interviewer will read it into the profile — then ask
+  for the tailored resume again.
+
+A short resume built on real evidence beats a full page the validator rejects.
+But a resume with no Education section when the user has a degree is a gap
+worth one question, never something to ship silently.
 
 ## If something fails
 

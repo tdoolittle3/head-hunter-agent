@@ -44,7 +44,9 @@ def load_tailoring_context(
 
     Returns:
         The posting's requirements, the profile's roles, accomplishments,
-        skills and evidence, and the fit report if one has been run.
+        skills, evidence and education entries (each education entry's id is
+        citable as an Education bullet's reference), and the fit report if
+        one has been run.
     """
     repo = repository()
     user_id = current_user_id(tool_context)
@@ -159,7 +161,8 @@ def save_resume(
       - ``title``: the heading, e.g. 'Staff Engineer, Acme Foods' or 'Skills'
       - ``subtitle``: dates or location (optional)
       - ``bullets``: a list of dicts, each with ``text`` and a non-empty
-        ``evidence_ids`` list
+        ``evidence_ids`` list. An Education bullet cites the education
+        entry's ``edu-`` id instead, and may say only what that entry holds.
 
     The check is a plain Python function, not a judgment call. It fails a
     bullet whose cited evidence does not contain the numbers and names the

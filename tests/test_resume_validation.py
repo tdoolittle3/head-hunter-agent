@@ -15,6 +15,7 @@ import pytest
 from head_hunter.resume_validation import validate_resume
 from head_hunter.schemas import (
     Accomplishment,
+    Education,
     Evidence,
     Identity,
     Profile,
@@ -89,6 +90,16 @@ def profile() -> Profile:
             Evidence(id="ev-northwind", source_text=NORTHWIND_TEXT),
             Evidence(id="ev-skill", source_text=SKILL_TEXT),
         ],
+        education=[
+            Education(
+                id="edu-state",
+                institution="State University",
+                credential="B.S.",
+                field="Computer Science",
+                start_date="2014",
+                end_date="2018",
+            )
+        ],
     )
 
 
@@ -142,6 +153,27 @@ def test_a_bullet_may_draw_on_every_citation_it_makes(profile: Profile) -> None:
         ["ev-acme", "ev-skill"],
     )
     assert validate_resume(resume, profile).passed
+
+
+def test_an_education_line_cites_its_own_entry(profile: Profile) -> None:
+    """Education has no quote behind it; the entry itself is the citation."""
+    resume = Resume(
+        user_id="local",
+        job_id="job-1",
+        sections=[
+            ResumeSection(
+                title="Education",
+                bullets=[
+                    ResumeBullet(
+                        text="B.S. Computer Science, State University, 2014 - 2018",
+                        evidence_ids=["edu-state"],
+                    )
+                ],
+            )
+        ],
+    )
+    result = validate_resume(resume, profile)
+    assert result.passed, [f.reason for f in result.failures]
 
 
 # What must fail ---------------------------------------------------------
@@ -215,6 +247,18 @@ def test_the_agents_interpretation_is_not_part_of_the_evidence(
 def test_an_unknown_evidence_id_fails(profile: Profile) -> None:
     text = "Rewrote the billing pipeline."
     assert "ev-nope" in reason(profile, text, ["ev-nope"])
+
+
+def test_an_education_line_cannot_name_another_school(profile: Profile) -> None:
+    """Citing an education entry licenses its fields, not any school at all."""
+    text = "M.S. from Stanford"
+    flagged = reason(profile, text, ["edu-state"])
+    assert "Stanford" in flagged and "M.S" in flagged
+
+
+def test_an_unknown_education_id_fails(profile: Profile) -> None:
+    text = "B.S. Computer Science, State University, 2014 - 2018"
+    assert "edu-nope" in reason(profile, text, ["edu-nope"])
 
 
 def test_an_empty_bullet_fails(profile: Profile) -> None:
