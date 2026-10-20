@@ -95,6 +95,10 @@ class FakeDocument:
             raise AlreadyExists(f"Document already exists: {self.path}")
         self._store[self.path] = copy.deepcopy(data)
 
+    def delete(self) -> None:
+        # Real Firestore deletes are no-ops on missing documents too.
+        self._store.pop(self.path, None)
+
 
 class FakeCollection:
     """A collection, which in Firestore is just a path prefix."""
@@ -227,6 +231,34 @@ def test_other_users_records_are_not_returned(repo: FirestoreRepository) -> None
 
     assert repo.get_job(USER, "job-a") is None
     assert repo.list_jobs(USER) == []
+
+
+def test_deletes_remove_the_record_and_tolerate_repeats(
+    repo: FirestoreRepository,
+) -> None:
+    job = repo.save_job(make_job("job-a"))
+    repo.save_fit_report(FitReport(user_id=USER, job_id=job.id, score=50, summary="s"))
+
+    repo.delete_fit_report(USER, job.id)
+    repo.delete_job(USER, job.id)
+    repo.delete_job(USER, job.id)  # already gone: a no-op, not an error
+
+    assert repo.get_job(USER, "job-a") is None
+    assert repo.get_fit_report(USER, "job-a") is None
+
+
+def test_deleting_a_resume_takes_its_rendered_documents(
+    repo: FirestoreRepository,
+) -> None:
+    from head_hunter.schemas import Resume
+
+    repo.save_resume(Resume(user_id=USER, job_id="job-a"))
+    repo.save_resume_document(USER, "job-a", "md", b"# resume")
+
+    repo.delete_resume(USER, "job-a")
+
+    assert repo.get_resume(USER, "job-a") is None
+    assert repo.get_resume_document(USER, "job-a", "md") is None
 
 
 def test_profile_for_the_wrong_user_raises(repo: FirestoreRepository) -> None:

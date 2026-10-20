@@ -540,7 +540,7 @@ def test_a_deleted_conversation_is_gone(client: TestClient, runner: FakeRunner) 
     gone = client.delete(f"/api/conversations/{sid}", headers=bearer("alice-token"))
 
     assert gone.status_code == 200
-    assert gone.json() == {"status": "deleted"}
+    assert gone.json()["status"] == "deleted"
     replay = client.get(f"/api/conversations/{sid}", headers=bearer("alice-token"))
     assert replay.status_code == 404
     assert client.get("/api/conversations", headers=bearer("alice-token")).json() == []
@@ -565,10 +565,63 @@ def test_one_user_cannot_delete_anothers_conversation(
     assert [r["session_id"] for r in rows] == [sid]
 
 
+# Archiving conversations ------------------------------------------------------
+
+
+def test_archiving_requires_sign_in(client: TestClient) -> None:
+    assert client.post("/api/conversations/x/archive").status_code == 401
+    assert client.post("/api/conversations/x/unarchive").status_code == 401
+
+
+def test_an_archived_conversation_is_hidden_until_restored(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    kept = seed_conversation(runner, "alice-uid", "keep this one")
+    hidden = seed_conversation(runner, "alice-uid", "archive this one")
+
+    put_away = client.post(
+        f"/api/conversations/{hidden}/archive", headers=bearer("alice-token")
+    )
+    assert put_away.status_code == 200
+
+    rows = client.get("/api/conversations", headers=bearer("alice-token")).json()
+    assert [r["session_id"] for r in rows] == [kept]
+
+    archived = client.get(
+        "/api/conversations?archived=true", headers=bearer("alice-token")
+    ).json()
+    assert [r["session_id"] for r in archived] == [hidden]
+
+    # Archiving removes nothing: the conversation still replays.
+    replay = client.get(f"/api/conversations/{hidden}", headers=bearer("alice-token"))
+    assert replay.status_code == 200
+
+    restored = client.post(
+        f"/api/conversations/{hidden}/unarchive", headers=bearer("alice-token")
+    )
+    assert restored.status_code == 200
+    rows = client.get("/api/conversations", headers=bearer("alice-token")).json()
+    assert {r["session_id"] for r in rows} == {kept, hidden}
+
+
+def test_one_user_cannot_archive_anothers_conversation(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    sid = seed_conversation(runner, "alice-uid", "private things")
+
+    stolen = client.post(
+        f"/api/conversations/{sid}/archive", headers=bearer("bob-token")
+    )
+
+    assert stolen.status_code == 404
+    rows = client.get("/api/conversations", headers=bearer("alice-token")).json()
+    assert [r["session_id"] for r in rows] == [sid]
+
+
 # Chats tied to a saved job ----------------------------------------------------
 
 
-def seed_job(user_id: str = "alice-uid") -> str:
+def seed_job(user_id: str = "alice-uid", session_id: str | None = None) -> str:
     """Put one posting in the store, the way Intake would."""
     job = JobPosting(
         id="job-globex",
@@ -578,9 +631,38 @@ def seed_job(user_id: str = "alice-uid") -> str:
         title="Data Engineer",
         requirements=[Requirement(text="Python", kind="required", category="skill")],
         raw_text="the posting as pasted",
+        session_id=session_id,
     )
     JsonRepository().save_job(job)
     return job.id
+
+
+def test_deleting_a_conversation_purges_what_it_added(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    """The whole point of delete-entirely: the chat's records go with it."""
+    sid = seed_conversation(runner, "alice-uid", "paste a job, save it")
+    job_id = seed_job(session_id=sid)
+
+    gone = client.delete(f"/api/conversations/{sid}", headers=bearer("alice-token"))
+
+    assert gone.status_code == 200
+    assert gone.json()["removed"]["jobs"] == 1
+    assert JsonRepository().get_job("alice-uid", job_id) is None
+
+
+def test_deleting_a_conversation_leaves_other_chats_records(
+    client: TestClient, runner: FakeRunner
+) -> None:
+    other = seed_conversation(runner, "alice-uid", "the chat that saved the job")
+    doomed = seed_conversation(runner, "alice-uid", "an unrelated chat")
+    job_id = seed_job(session_id=other)
+
+    gone = client.delete(f"/api/conversations/{doomed}", headers=bearer("alice-token"))
+
+    assert gone.status_code == 200
+    assert gone.json()["removed"]["jobs"] == 0
+    assert JsonRepository().get_job("alice-uid", job_id) is not None
 
 
 def test_a_new_chat_can_be_tied_to_a_saved_job(

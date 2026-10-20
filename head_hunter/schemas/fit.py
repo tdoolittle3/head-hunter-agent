@@ -51,6 +51,11 @@ class FitReport(StoredRecord):
         default_factory=list, description="Requirements not met, each tagged."
     )
     summary: str = Field(description="Plain-language read on the fit.")
+    session_id: str | None = Field(
+        default=None,
+        description="The chat this analysis ran in; removed with it if that "
+        "chat is deleted entirely.",
+    )
 
     @property
     def blockers(self) -> list[UnmetRequirement]:

@@ -98,8 +98,13 @@ Then open Web Preview on port 8000 and talk to the Head Hunter.
    in chat**: it starts a conversation that already knows which job you mean
    and where it stands — scored or not, resume written or not, applied or not.
    Chats started this way are filed under the job, and the job's page lists
-   them so you can re-enter any of them or start another. Every conversation —
-   here or on the new-chat screen — has an **×** that deletes it for good.
+   them so you can re-enter any of them or start another.
+7. Every conversation row has two ways out. The **–** archives it: it leaves
+   the lists (an "Archived chats" link on the new-chat screen brings them back)
+   and nothing else changes. The **×** deletes it entirely: every record that
+   chat created — profile entries, saved jobs with their fit reports and
+   resumes, journal events — is removed with it, while anything other chats
+   added survives, even on a role or skill the deleted chat mentioned first.
 
 An uploaded resume is a head start, not a shortcut around the rules. The agent
 reads it and records everything it states in the same turn — roles, every

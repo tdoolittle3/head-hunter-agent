@@ -224,6 +224,36 @@ class JsonRepository(Repository):
         """
         return self._write(self.job_path(job.id), job, create_only=create_only)
 
+    def _unlink(self, path: Path) -> None:
+        """Remove one file; a file already gone is fine (idempotent deletes)."""
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise StorageError(f"Could not delete {path}: {exc}") from exc
+
+    def delete_job(self, user_id: str, job_id: str) -> None:
+        """Remove one posting, if it exists and belongs to ``user_id``."""
+        if self.get_job(user_id, job_id) is not None:
+            self._unlink(self.job_path(job_id))
+
+    def delete_fit_report(self, user_id: str, job_id: str) -> None:
+        """Remove the fit report for one job, if there is one."""
+        if self.get_fit_report(user_id, job_id) is not None:
+            self._unlink(self.fit_report_path(job_id))
+
+    def delete_resume(self, user_id: str, job_id: str) -> None:
+        """Remove the resume record and its rendered .md and .docx files."""
+        if self.get_resume(user_id, job_id) is None:
+            return
+        for suffix in ("json", "md", "docx"):
+            self._unlink(self.resume_path(job_id, suffix))
+
+    def delete_journal_entry(self, user_id: str, entry_id: str) -> None:
+        """Remove one journal entry, if it exists and belongs to ``user_id``."""
+        entry = self._read(self.journal_path(entry_id), JournalEntry)
+        if entry is not None and entry.user_id == user_id:
+            self._unlink(self.journal_path(entry_id))
+
     def save_upload(self, upload: UploadedDocument) -> UploadedDocument:
         """Write extracted text to ``data/uploads/<id>.json``, never overwriting."""
         return self._write(self.upload_path(upload.id), upload, create_only=True)

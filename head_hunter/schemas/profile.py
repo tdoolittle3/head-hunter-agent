@@ -76,6 +76,11 @@ class Role(HeadHunterModel):
     summary: str | None = Field(
         default=None, description="What the role was, in one or two sentences."
     )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat that created this entry; removed if that chat is "
+        "deleted entirely (unless later chats built on it).",
+    )
 
 
 class Accomplishment(HeadHunterModel):
@@ -115,6 +120,11 @@ class Accomplishment(HeadHunterModel):
             "not read it."
         ),
     )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat that created this entry; removed with it if that "
+        "chat is deleted entirely.",
+    )
 
 
 class Skill(HeadHunterModel):
@@ -137,6 +147,12 @@ class Skill(HeadHunterModel):
     last_used: str | None = Field(
         default=None, description="Roughly when last used, e.g. 2025 or 'current'."
     )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat that first claimed this skill. Deleting a chat "
+        "strips its evidence; the skill itself only goes when no evidence is "
+        "left.",
+    )
 
 
 class Education(HeadHunterModel):
@@ -152,6 +168,11 @@ class Education(HeadHunterModel):
     end_date: str | None = Field(default=None, description="End or expected end.")
     completed: bool = Field(
         default=True, description="Finished, as opposed to in progress."
+    )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat that created this entry; removed with it if that "
+        "chat is deleted entirely.",
     )
 
 
@@ -182,6 +203,11 @@ class OpenQuestion(HeadHunterModel):
     )
     status: OpenQuestionStatus = Field(
         default="open", description="Whether still open."
+    )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat that created this entry; removed with it if that "
+        "chat is deleted entirely.",
     )
 
 

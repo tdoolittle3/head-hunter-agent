@@ -20,7 +20,12 @@ from pydantic import ValidationError
 from head_hunter.resume_render import render_docx, render_markdown
 from head_hunter.resume_validation import validate_resume
 from head_hunter.schemas import Resume, ResumeBullet, ResumeSection
-from head_hunter.tools._base import ToolError, current_user_id, repository
+from head_hunter.tools._base import (
+    ToolError,
+    current_session_id,
+    current_user_id,
+    repository,
+)
 
 
 def load_tailoring_context(
@@ -233,7 +238,12 @@ def save_resume(
             )
         )
 
-    resume = Resume(user_id=user_id, job_id=job_id, sections=parsed)
+    resume = Resume(
+        user_id=user_id,
+        job_id=job_id,
+        sections=parsed,
+        session_id=current_session_id(tool_context),
+    )
     resume.validation = validate_resume(resume, profile)
     repo.save_resume(resume)
 

@@ -13,7 +13,12 @@ from google.adk.tools import ToolContext
 
 from head_hunter.jd_text import clean_job_text, looks_like_job_posting
 from head_hunter.schemas import JobPosting, Requirement, new_id
-from head_hunter.tools._base import ToolError, current_user_id, repository
+from head_hunter.tools._base import (
+    ToolError,
+    current_session_id,
+    current_user_id,
+    repository,
+)
 
 REQUIREMENT_KINDS = ("required", "preferred")
 REQUIREMENT_CATEGORIES = ("skill", "experience", "credential", "location", "other")
@@ -132,6 +137,7 @@ def save_job_posting(
         requirements=parsed,
         raw_text=raw_text,
         url=url,
+        session_id=current_session_id(tool_context),
     )
     repo.save_job(job, create_only=True)
 
