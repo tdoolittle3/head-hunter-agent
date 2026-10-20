@@ -26,7 +26,12 @@ from head_hunter.schemas import (
     UnmetRequirement,
 )
 from head_hunter.scoring import score_fit
-from head_hunter.tools._base import ToolError, current_user_id, repository
+from head_hunter.tools._base import (
+    ToolError,
+    current_session_id,
+    current_user_id,
+    repository,
+)
 
 GAP_KINDS = ("stretch", "blocker")
 
@@ -295,6 +300,7 @@ def save_fit_report(
         met=met_records,
         unmet=unmet_records,
         summary=summary,
+        session_id=current_session_id(tool_context),
     )
     repo.save_fit_report(report)
 

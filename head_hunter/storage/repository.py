@@ -50,6 +50,14 @@ class Repository(ABC):
         """
 
     @abstractmethod
+    def delete_job(self, user_id: str, job_id: str) -> None:
+        """Remove one posting. Deleting a job that is not there is a no-op.
+
+        All the delete methods are idempotent so the purge that runs when a
+        chat is deleted entirely can be retried after a partial failure.
+        """
+
+    @abstractmethod
     def save_fit_report(self, report: FitReport) -> FitReport:
         """Write a fit report, stamping ``updated_at``. Returns what was stored."""
 
@@ -58,12 +66,20 @@ class Repository(ABC):
         """Load the fit report for one job, or None if it has not been run."""
 
     @abstractmethod
+    def delete_fit_report(self, user_id: str, job_id: str) -> None:
+        """Remove the fit report for one job, if there is one."""
+
+    @abstractmethod
     def save_resume(self, resume: Resume) -> Resume:
         """Write a tailored resume, stamping ``updated_at``. Returns what was stored."""
 
     @abstractmethod
     def get_resume(self, user_id: str, job_id: str) -> Resume | None:
         """Load the resume written for one job, or None if there is not one yet."""
+
+    @abstractmethod
+    def delete_resume(self, user_id: str, job_id: str) -> None:
+        """Remove the resume for one job, with its rendered files, if any."""
 
     @abstractmethod
     def save_upload(self, upload: UploadedDocument) -> UploadedDocument:
@@ -84,6 +100,10 @@ class Repository(ABC):
     @abstractmethod
     def list_journal_entries(self, user_id: str) -> list[JournalEntry]:
         """Return a user's journal entries, oldest first."""
+
+    @abstractmethod
+    def delete_journal_entry(self, user_id: str, entry_id: str) -> None:
+        """Remove one journal entry, if it is there."""
 
     @abstractmethod
     def save_resume_document(

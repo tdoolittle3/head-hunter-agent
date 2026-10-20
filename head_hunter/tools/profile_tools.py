@@ -26,7 +26,12 @@ from head_hunter.schemas import (
     UploadedDocument,
     new_id,
 )
-from head_hunter.tools._base import ToolError, current_user_id, repository
+from head_hunter.tools._base import (
+    ToolError,
+    current_session_id,
+    current_user_id,
+    repository,
+)
 
 SKILL_LEVELS = ("aware", "working", "strong", "expert")
 
@@ -97,6 +102,7 @@ def _add_evidence(
     source_text: str,
     note: str | None,
     upload: UploadedDocument | None = None,
+    session_id: str | None = None,
 ) -> Evidence:
     """Append a new Evidence record and return it.
 
@@ -111,6 +117,7 @@ def _add_evidence(
         source_text=source_text,
         source="resume_upload" if upload is not None else "interview",
         note=note,
+        session_id=session_id,
     )
     profile.evidence.append(evidence)
     return evidence
@@ -326,6 +333,7 @@ def add_role(
         location=location,
         employment_type=employment_type,
         summary=summary,
+        session_id=current_session_id(tool_context),
     )
     profile.roles.append(role)
     repository().save_profile(profile)
@@ -394,6 +402,7 @@ def add_education(
         start_date=start_date,
         end_date=end_date,
         completed=completed,
+        session_id=current_session_id(tool_context),
     )
     profile.education.append(entry)
     repository().save_profile(profile)
@@ -446,8 +455,13 @@ def add_accomplishment(
         source_text, "an accomplishment", from_upload=bool(upload_id)
     )
     upload = _upload_for_quote(upload_id, cleaned, tool_context)
+    session_id = current_session_id(tool_context)
     evidence = _add_evidence(
-        profile, cleaned, note=f"accomplishment at {role_id}", upload=upload
+        profile,
+        cleaned,
+        note=f"accomplishment at {role_id}",
+        upload=upload,
+        session_id=session_id,
     )
 
     accomplishment = Accomplishment(
@@ -460,6 +474,7 @@ def add_accomplishment(
         tools=tools or [],
         evidence_id=evidence.id,
         source_text=cleaned,
+        session_id=session_id,
     )
     profile.accomplishments.append(accomplishment)
     repository().save_profile(profile)
@@ -573,8 +588,13 @@ def add_resume_accomplishment(
                 ),
             }
 
+    session_id = current_session_id(tool_context)
     evidence = _add_evidence(
-        profile, cleaned, note=f"resume line at {role_id}", upload=upload
+        profile,
+        cleaned,
+        note=f"resume line at {role_id}",
+        upload=upload,
+        session_id=session_id,
     )
     accomplishment = Accomplishment(
         id=new_id("acc", {a.id for a in profile.accomplishments}),
@@ -586,6 +606,7 @@ def add_resume_accomplishment(
         evidence_id=evidence.id,
         source_text=cleaned,
         interpretation=interpretation,
+        session_id=session_id,
     )
     profile.accomplishments.append(accomplishment)
     repository().save_profile(profile)
@@ -723,7 +744,13 @@ def add_skill(
         source_text, f"the skill {name!r}", from_upload=bool(upload_id)
     )
     upload = _upload_for_quote(upload_id, cleaned, tool_context)
-    evidence = _add_evidence(profile, cleaned, note=f"skill: {name}", upload=upload)
+    evidence = _add_evidence(
+        profile,
+        cleaned,
+        note=f"skill: {name}",
+        upload=upload,
+        session_id=current_session_id(tool_context),
+    )
 
     existing = next((s for s in profile.skills if s.name.lower() == name.lower()), None)
     if existing is not None:
@@ -744,6 +771,7 @@ def add_skill(
                 years=years,
                 evidence_ids=[evidence.id],
                 last_used=last_used,
+                session_id=current_session_id(tool_context),
             )
         )
         action = "added"
@@ -801,6 +829,7 @@ def add_open_question(
         about_role_id=about_role_id,
         about_skill=about_skill,
         reason=reason,
+        session_id=current_session_id(tool_context),
     )
     profile.open_questions.append(open_question)
     repository().save_profile(profile)

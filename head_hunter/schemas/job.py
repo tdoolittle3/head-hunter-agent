@@ -48,3 +48,8 @@ class JobPosting(StoredRecord):
     )
     raw_text: str = Field(description="The posting as received, unedited.")
     url: str | None = Field(default=None, description="Where the posting came from.")
+    session_id: str | None = Field(
+        default=None,
+        description="The chat this posting was saved in; removed with it (along "
+        "with its fit report and resume) if that chat is deleted entirely.",
+    )

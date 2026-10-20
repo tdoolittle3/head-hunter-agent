@@ -174,6 +174,9 @@
   .conv-wrap .conv-row { flex: 1; margin: 0; max-width: none; }
   .conv-x { flex: none; padding: 0 12px; font-size: 15px; color: var(--dim); }
   .conv-x:hover { border-color: var(--ember); color: var(--ember); }
+  .conv-more { border-color: transparent; color: var(--dim); font-size: 11px;
+    padding: 6px 10px; margin: 2px 0 8px; }
+  .conv-more:hover { color: var(--cyan); }
   #jb-chats .conv-wrap { max-width: none; margin: 10px 0 0; }
 
   #pending { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 0;
@@ -529,8 +532,9 @@
   const storeKey = () => "hh-conversation-" + auth.currentUser.uid;
   const pretty = (author) => author.replaceAll("_", " ");
 
-  // One row of a conversation list: click to open, × to delete for good.
-  function conversationRow(c, onOpen, onError) {
+  // One row of a conversation list: click to open, – to archive (or ↩ to
+  // restore when the row is in the archived list), × to delete for good.
+  function conversationRow(c, onOpen, onError, archived) {
     const wrap = el("div", "conv-wrap");
     const row = el("button", "conv-row");
     row.appendChild(el("span", "conv-title", c.title));
@@ -538,12 +542,34 @@
     row.appendChild(el("span", "conv-date",
       new Date(c.updated_at * 1000).toLocaleDateString()));
     row.addEventListener("click", onOpen);
+
+    const put = el("button", "conv-x", archived ? "↩" : "–");
+    put.type = "button";
+    put.title = archived
+      ? "Restore this chat to the list"
+      : "Archive this chat — hides it from the list, keeps everything it added";
+    put.setAttribute("aria-label", put.title);
+    put.addEventListener("click", async () => {
+      const path = "/api/conversations/" + encodeURIComponent(c.session_id)
+        + (archived ? "/unarchive" : "/archive");
+      try {
+        await authedPost(path, archived
+          ? "Could not restore that chat."
+          : "Could not archive that chat.");
+      } catch (error) {
+        onError(error);
+        return;
+      }
+      wrap.remove();
+    });
+
     const drop = el("button", "conv-x", "×");
     drop.type = "button";
-    drop.title = "Delete this chat";
-    drop.setAttribute("aria-label", "Delete this chat");
+    drop.title = "Delete this chat and everything it added";
+    drop.setAttribute("aria-label", drop.title);
     drop.addEventListener("click", async () => {
-      if (!confirm("Delete this chat? It cannot be brought back.")) return;
+      if (!confirm("Delete this chat for good? Everything it added — profile "
+        + "entries, jobs, fit reports, resumes — is removed with it.")) return;
       try {
         await authedDelete("/api/conversations/" + encodeURIComponent(c.session_id),
           "Could not delete that chat.");
@@ -557,7 +583,9 @@
       }
       wrap.remove();
     });
+
     wrap.appendChild(row);
+    wrap.appendChild(put);
     wrap.appendChild(drop);
     return wrap;
   }
@@ -570,15 +598,44 @@
     addMessage("Say hello to get started. Your profile is saved between visits.", "note");
     try {
       const recent = await authedJson("/api/conversations", "");
-      if (!recent.length) return;
-      addMessage("Or pick up where you left off:", "note");
-      for (const c of recent) {
-        $("log").appendChild(conversationRow(c,
-          () => resumeConversation(c.session_id),
-          (error) => addMessage(error.message, "err")));
+      if (recent.length) {
+        addMessage("Or pick up where you left off:", "note");
+        for (const c of recent) {
+          $("log").appendChild(conversationRow(c,
+            () => resumeConversation(c.session_id),
+            (error) => addMessage(error.message, "err")));
+        }
       }
+      const more = el("button", "conv-more", "Archived chats");
+      more.addEventListener("click", () => {
+        more.remove();
+        showArchivedChats();
+      });
+      $("log").appendChild(more);
     } catch (_) {
       // The list is a convenience; a fresh chat works without it.
+    }
+  }
+
+  async function showArchivedChats() {
+    let rows = [];
+    try {
+      rows = await authedJson("/api/conversations?archived=true",
+        "Could not load your archived chats.");
+    } catch (error) {
+      addMessage(error.message, "err");
+      return;
+    }
+    if (!rows.length) {
+      addMessage("No archived chats.", "note");
+      return;
+    }
+    addMessage("Archived:", "note");
+    for (const c of rows) {
+      $("log").appendChild(conversationRow(c,
+        () => resumeConversation(c.session_id),
+        (error) => addMessage(error.message, "err"),
+        true));
     }
   }
 
@@ -902,6 +959,15 @@
   async function authedDelete(path, fallback) {
     const res = await fetch(path, {
       method: "DELETE",
+      headers: { Authorization: "Bearer " + await idToken() },
+    });
+    if (!res.ok) throw await failure(res, fallback);
+    return res.json();
+  }
+
+  async function authedPost(path, fallback) {
+    const res = await fetch(path, {
+      method: "POST",
       headers: { Authorization: "Bearer " + await idToken() },
     });
     if (!res.ok) throw await failure(res, fallback);

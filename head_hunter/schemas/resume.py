@@ -69,3 +69,8 @@ class Resume(StoredRecord):
     validation: ValidationResult | None = Field(
         default=None, description="Validator outcome. None means not yet checked."
     )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat this resume was written in; removed with it if "
+        "that chat is deleted entirely.",
+    )

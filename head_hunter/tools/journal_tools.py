@@ -16,7 +16,12 @@ from google.adk.tools import ToolContext
 from head_hunter.funnel import compute_funnel, describe_applications
 from head_hunter.schemas import JournalEntry, utc_now
 from head_hunter.schemas.journal import JournalEventKind
-from head_hunter.tools._base import ToolError, current_user_id, repository
+from head_hunter.tools._base import (
+    ToolError,
+    current_session_id,
+    current_user_id,
+    repository,
+)
 
 EVENT_KINDS: tuple[str, ...] = get_args(JournalEventKind)
 
@@ -121,6 +126,7 @@ def log_application_event(
             reflection=reflection.strip() if reflection else None,
             went_well=[w.strip() for w in went_well or [] if w.strip()],
             to_improve=[t.strip() for t in to_improve or [] if t.strip()],
+            session_id=current_session_id(tool_context),
         )
     )
     return {

@@ -210,6 +210,39 @@ class FirestoreRepository(Repository):
         ref = self._doc(job.user_id, "jobs", _check_id(job.id, "job_id"))
         return self._write(ref, job, create_only=create_only)
 
+    def _delete(self, ref: Any) -> None:
+        """Remove one document; one already gone is fine (idempotent deletes)."""
+        try:
+            ref.delete()
+        except Exception as exc:  # noqa: BLE001 - surfaced, never swallowed
+            raise StorageError(f"Could not delete {ref.path}: {exc}") from exc
+
+    def delete_job(self, user_id: str, job_id: str) -> None:
+        """Remove one posting, if it exists and belongs to ``user_id``."""
+        if self.get_job(user_id, job_id) is not None:
+            self._delete(self._doc(user_id, "jobs", _check_id(job_id, "job_id")))
+
+    def delete_fit_report(self, user_id: str, job_id: str) -> None:
+        """Remove the fit report for one job, if there is one."""
+        if self.get_fit_report(user_id, job_id) is not None:
+            self._delete(self._doc(user_id, "fit_reports", _check_id(job_id, "job_id")))
+
+    def delete_resume(self, user_id: str, job_id: str) -> None:
+        """Remove the resume record and its rendered documents."""
+        if self.get_resume(user_id, job_id) is None:
+            return
+        checked = _check_id(job_id, "job_id")
+        self._delete(self._doc(user_id, "resumes", checked))
+        for suffix in ("md", "docx"):
+            self._delete(self._doc(user_id, "resume_documents", f"{checked}.{suffix}"))
+
+    def delete_journal_entry(self, user_id: str, entry_id: str) -> None:
+        """Remove one journal entry, if it exists and belongs to ``user_id``."""
+        ref = self._doc(user_id, "journal", _check_id(entry_id, "entry_id"))
+        entry = self._read(ref, JournalEntry)
+        if entry is not None and entry.user_id == user_id:
+            self._delete(ref)
+
     def save_upload(self, upload: UploadedDocument) -> UploadedDocument:
         """Write extracted text, filed under the user, never overwriting."""
         ref = self._doc(upload.user_id, "uploads", _check_id(upload.id, "upload_id"))

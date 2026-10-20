@@ -110,6 +110,40 @@ def test_other_users_records_are_not_returned(repo: JsonRepository) -> None:
     assert repo.list_jobs(USER) == []
 
 
+def test_deletes_remove_the_record_and_tolerate_repeats(repo: JsonRepository) -> None:
+    job = repo.save_job(make_job("job-a"))
+    repo.save_fit_report(FitReport(user_id=USER, job_id=job.id, score=50, summary="s"))
+
+    repo.delete_fit_report(USER, job.id)
+    repo.delete_job(USER, job.id)
+    repo.delete_job(USER, job.id)  # already gone: a no-op, not an error
+
+    assert repo.get_job(USER, "job-a") is None
+    assert repo.get_fit_report(USER, "job-a") is None
+
+
+def test_deleting_a_resume_takes_its_rendered_files(repo: JsonRepository) -> None:
+    from head_hunter.schemas import Resume
+
+    repo.save_resume(Resume(user_id=USER, job_id="job-a"))
+    repo.save_resume_document(USER, "job-a", "md", b"# resume")
+    repo.save_resume_document(USER, "job-a", "docx", b"bytes")
+
+    repo.delete_resume(USER, "job-a")
+
+    assert repo.get_resume(USER, "job-a") is None
+    assert not repo.resume_path("job-a", "md").exists()
+    assert not repo.resume_path("job-a", "docx").exists()
+
+
+def test_one_user_cannot_delete_anothers_records(repo: JsonRepository) -> None:
+    repo.save_job(make_job("job-a", user_id="someone-else"))
+
+    repo.delete_job(USER, "job-a")
+
+    assert repo.get_job("someone-else", "job-a") is not None
+
+
 def test_profile_for_the_wrong_user_raises(repo: JsonRepository) -> None:
     repo.save_profile(Profile(user_id="someone-else"))
 
@@ -144,7 +178,33 @@ def test_a_new_job_cannot_overwrite_an_existing_one(repo: JsonRepository) -> Non
     repo.save_job(make_job("job-a"))
 
 
-def test_a_stale_profile_write_is_refused(repo: JsonRepository) -> None:
+@pytest.fixture
+def ticking_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every ``touch()`` land on a distinct, increasing timestamp.
+
+    The stale-write guard compares ``updated_at`` values, and Windows' clock
+    granularity is coarse enough that two saves in quick succession can read
+    back the *same* instant, in which case the guard sees no change. The
+    Firestore suite has always pinned the clock for this; the JSON one relied
+    on file I/O being slow enough to cross a tick, which stopped being true.
+    """
+    import itertools
+    from datetime import UTC, datetime, timedelta
+
+    from head_hunter.schemas import base
+
+    start = datetime.now(UTC)
+    counter = itertools.count()
+
+    def advancing_now() -> datetime:
+        return start + timedelta(seconds=next(counter))
+
+    monkeypatch.setattr(base, "utc_now", advancing_now)
+
+
+def test_a_stale_profile_write_is_refused(
+    repo: JsonRepository, ticking_clock: None
+) -> None:
     """Two sessions that both loaded the profile must not silently clobber."""
     repo.save_profile(Profile(user_id=USER, goals=["First."]))
 

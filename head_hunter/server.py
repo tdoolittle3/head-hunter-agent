@@ -34,6 +34,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService, Session
 from google.genai import types
@@ -60,6 +61,7 @@ from head_hunter.job_views import (
     summarize_jobs,
 )
 from head_hunter.overview import Overview, compute_overview
+from head_hunter.purge import purge_session_records
 from head_hunter.ratelimit import RateLimiter
 from head_hunter.resume_render import MarkdownRenderError, render_docx, render_markdown
 from head_hunter.schemas import JobPosting, UploadedDocument
@@ -670,11 +672,13 @@ def create_app(
     async def conversations(
         user: Annotated[VerifiedUser, Depends(current_user)],
         job_id: str | None = None,
+        archived: bool = False,
     ) -> list[ConversationSummary]:
         """The caller's recent conversations, newest first, empty ones left out.
 
-        With ``job_id``, only the chats started from that posting — the Jobs
-        page uses this to list a job's conversations beside it.
+        Archived chats are hidden; with ``archived=true`` they are the only
+        ones listed. With ``job_id``, only the chats started from that posting
+        — the Jobs page uses this to list a job's conversations beside it.
 
         Listings come back without events, so each candidate is fetched in
         full for its title -- bounded by ``MAX_CONVERSATIONS_LISTED``.
@@ -702,7 +706,10 @@ def create_app(
             )
             if full is None:
                 continue
-            session_job = (full.state or {}).get("job_id")
+            state = full.state or {}
+            if bool(state.get("archived")) != archived:
+                continue
+            session_job = state.get("job_id")
             if job_id is not None and session_job != job_id:
                 continue
             messages = _conversation_messages(full.events)
@@ -720,25 +727,75 @@ def create_app(
             )
         return rows
 
+    async def owned_session(uid: str, session_id: str) -> Session:
+        """The caller's own session, or the 404 that hides everyone else's."""
+        session = await runner.session_service.get_session(
+            app_name=APP_NAME, user_id=uid, session_id=session_id
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="No such conversation.")
+        return session
+
+    async def set_archived(uid: str, session_id: str, archived: bool) -> None:
+        """Flip a conversation's archived flag via a state-delta event.
+
+        State is only ever changed through ``append_event``, the one write path
+        both session backends persist, so the flag survives restarts the same
+        way the conversation does.
+        """
+        session = await owned_session(uid, session_id)
+        await runner.session_service.append_event(
+            session,
+            Event(
+                author="system",
+                actions=EventActions(state_delta={"archived": archived}),
+            ),
+        )
+
+    @api.post("/api/conversations/{session_id}/archive")
+    async def archive_conversation(
+        session_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> dict[str, str]:
+        """Hide one conversation from the lists. Nothing else changes."""
+        await set_archived(user.uid, session_id, True)
+        return {"status": "archived"}
+
+    @api.post("/api/conversations/{session_id}/unarchive")
+    async def unarchive_conversation(
+        session_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> dict[str, str]:
+        """Bring an archived conversation back into the lists."""
+        await set_archived(user.uid, session_id, False)
+        return {"status": "restored"}
+
     @api.delete("/api/conversations/{session_id}")
     async def delete_conversation(
         session_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
-    ) -> dict[str, str]:
-        """Delete one past conversation, permanently.
+    ) -> dict[str, Any]:
+        """Delete one conversation permanently, with everything it added.
+
+        Every record a chat creates — profile entries, jobs, fit reports,
+        resumes, journal events — is stamped with the chat's session id, and
+        this removes them all (see ``head_hunter.purge``). The purge runs
+        before the session goes, so a failure leaves the chat in place to
+        retry rather than orphaning the records.
 
         Looked up under the caller's own uid first, so deleting someone else's
         session id is indistinguishable from deleting one that never existed.
         """
-        sessions = runner.session_service
-        session = await sessions.get_session(
+        await owned_session(user.uid, session_id)
+        try:
+            removed = purge_session_records(open_repository(), user.uid, session_id)
+        except StorageError:
+            logger.exception("Could not purge session %s", session_id)
+            raise HTTPException(
+                status_code=500,
+                detail="Could not remove what that chat added. Try again.",
+            ) from None
+        await runner.session_service.delete_session(
             app_name=APP_NAME, user_id=user.uid, session_id=session_id
         )
-        if session is None:
-            raise HTTPException(status_code=404, detail="No such conversation.")
-        await sessions.delete_session(
-            app_name=APP_NAME, user_id=user.uid, session_id=session_id
-        )
-        return {"status": "deleted"}
+        return {"status": "deleted", "removed": removed}
 
     @api.get("/api/conversations/{session_id}", response_model=Conversation)
     async def conversation(

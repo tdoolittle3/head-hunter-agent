@@ -50,3 +50,10 @@ class Evidence(HeadHunterModel):
             "Optional context about the capture, e.g. which question prompted it."
         ),
     )
+    session_id: str | None = Field(
+        default=None,
+        description=(
+            "The chat this was captured in. Deleting that chat entirely removes "
+            "this record and everything built on it."
+        ),
+    )

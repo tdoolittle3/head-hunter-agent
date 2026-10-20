@@ -82,3 +82,14 @@ def current_user_id(tool_context: ToolContext | None = None) -> str:
             "and HH_SINGLE_USER is not set."
         )
     return user_id
+
+
+def current_session_id(tool_context: ToolContext | None = None) -> str | None:
+    """Return the id of the chat this tool call is running in, if any.
+
+    Stamped on every record a tool creates, so that deleting a chat entirely
+    can take with it everything that chat added. None outside a session (tests,
+    scripts), in which case the record simply cannot be purged by chat.
+    """
+    session = getattr(tool_context, "session", None)
+    return getattr(session, "id", None)

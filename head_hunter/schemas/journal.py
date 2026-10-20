@@ -59,3 +59,8 @@ class JournalEntry(StoredRecord):
         default_factory=list,
         description="Evidence captured here, e.g. a story told in a debrief.",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="The chat this event was logged in; removed with it if that "
+        "chat is deleted entirely.",
+    )
