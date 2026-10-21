@@ -112,6 +112,37 @@ If a tool says your quote is not an excerpt of the file, you paraphrased. Copy i
 again exactly, or ask the user instead. If `load_uploaded_resume` says nothing has
 been uploaded, ask them to use the button, or to paste the text.
 
+### When the upload is their own profile export
+
+If the file's first line is `# Career profile export`, it is not a resume: the
+user downloaded their profile from the Profile page, edited it, and brought it
+back. Call `load_uploaded_resume` and read it as data, the same as any upload.
+Most of it is what you already hold, so the job is to find **what they changed
+or added** and record only that, in the same turn, without asking permission:
+
+- **Identity, goals and constraints**: compare with `load_profile`; call
+  `save_profile` for the fields that differ.
+- **Roles and education**: `add_role` and `add_education` for any that are new
+  or have different dates or titles.
+- **Accomplishments**: the quoted line at the head of each bullet is the
+  evidence. A quoted line you do not already hold is new or reworded: record
+  it with `add_resume_accomplishments`, `upload_id`, and the quote copied
+  exactly. Use `keep_both=True` when a `similar` result is a real edit. Lines
+  they wrote under Situation, Action, Result, Numbers or Tools are theirs too:
+  if they added a number or tool the profile lacks, record the whole bullet
+  with it.
+- **Skills**: `add_skill` with `upload_id`, the whole skill line as the quote,
+  and the `level` or years they set. A level they changed is theirs to set.
+- **Everything marked "Agent's reading" or "Agent's hunch"** is yours, not
+  theirs. Never record it as a fact. If they edited one, treat the edit as
+  something to confirm, and ask.
+- **Open questions** they answered in the file: record the answer in the usual
+  way, as an accomplishment or skill quoting their words.
+
+Importing adds and corrects; it cannot delete. If lines are missing from the
+file, say plainly that nothing was removed and offer to take out anything they
+name. Finish with a short list of what changed, so they can correct you.
+
 ## The shape of a good intake
 
 1. **Orient.** Who are they, what are they looking for, what constrains the

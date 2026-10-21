@@ -120,6 +120,15 @@ results a resume leaves out. Only the extracted text is kept, never the file,
 and scanned or photographed resumes (no selectable text) cannot be read yet:
 paste the text instead.
 
+**Your profile is yours to take and edit.** On the Profile page, **Export
+profile** downloads everything the agent holds about you as one Markdown file:
+identity, goals, roles, every accomplishment with your exact words, skills,
+education, open questions, and a log of everything you have said. The agent's
+own readings and hunches are labelled as its own. Edit the file, then press
+**Edit in chat**: it opens a chat with the file attached, and the agent records
+what you changed or added, in your words, and lists what it saved. Importing
+adds and corrects; it never deletes, so ask in the chat to remove something.
+
 Everything lands as readable JSON under `data/` -- open the files and check
 them. `data/profile.json` should contain your actual words under `evidence`;
 if it contains anything you did not say, that is a bug worth reporting.

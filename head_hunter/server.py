@@ -21,6 +21,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -61,6 +62,7 @@ from head_hunter.job_views import (
     summarize_jobs,
 )
 from head_hunter.overview import Overview, compute_overview
+from head_hunter.profile_export import render_profile_markdown
 from head_hunter.purge import purge_session_records
 from head_hunter.ratelimit import RateLimiter
 from head_hunter.resume_render import (
@@ -417,6 +419,31 @@ def create_app(
                 status_code=500, detail="Could not load your overview. Try again."
             ) from None
         return compute_overview(profile, jobs, reports, resumes, entries)
+
+    @api.get("/api/profile.md")
+    def profile_markdown(
+        user: Annotated[VerifiedUser, Depends(current_user)],
+    ) -> PlainTextResponse:
+        """Everything the profile holds, as Markdown the user can edit and re-upload."""
+        try:
+            profile = open_repository().get_profile(user.uid)
+        except StorageError:
+            logger.exception("Could not export the profile for %s", user.uid)
+            raise HTTPException(
+                status_code=500, detail="Could not export your profile. Try again."
+            ) from None
+        if profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No profile yet. Say hello in the chat to start one.",
+            )
+        today = datetime.now(UTC).date().isoformat()
+        filename = f"career-profile-{today}.md"
+        return PlainTextResponse(
+            render_profile_markdown(profile, today),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @api.get("/api/jobs", response_model=list[JobSummary])
     def jobs(user: Annotated[VerifiedUser, Depends(current_user)]) -> list[JobSummary]:

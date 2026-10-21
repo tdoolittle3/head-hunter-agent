@@ -452,6 +452,12 @@
     <p class="ov-note" id="ov-profile-note" hidden>No profile yet. Say hello in the chat
       and the Interviewer will start building it from your own words.</p>
     <div class="fn-stats" id="ov-profile"></div>
+    <div class="jb-downloads" id="ov-export" style="margin-top:16px" hidden>
+      <button type="button" id="ov-export-btn" title="Everything the agent holds about you, as an editable Markdown file">Export profile</button>
+      <button type="button" id="ov-import-btn" title="Pick your edited file; it goes to the chat for the agent to read">Edit in chat</button>
+      <input type="file" id="ov-import-file" accept=".md,.txt" hidden>
+      <p class="ov-note" style="margin:0">Export, edit the file, then bring it back to a chat.</p>
+    </div>
 
     <div class="eyebrow">Job matching</div>
     <p class="ov-note" id="ov-match-note" hidden>Paste a job description in the chat to
@@ -898,7 +904,10 @@
 
     const names = uploaded.map((u) => u.filename).join(", ");
     const ids = uploaded.map((u) => u.filename + " (upload id " + u.upload_id + ")").join("; ");
-    const intro = uploaded.length === 1
+    const isExport = (f) => /^career-profile.*\.(md|txt)$/i.test(f.name);
+    const intro = files.every(isExport)
+      ? "I just uploaded my edited career profile: " + ids + "."
+      : uploaded.length === 1
       ? "I just uploaded my resume: " + ids + "."
       : "I just uploaded " + uploaded.length + " versions of my resume: " + ids +
         ". Read all of them and merge every unique line into my profile.";
@@ -1282,6 +1291,7 @@
       const p = data.profile;
       $("ov-profile").replaceChildren();
       show("ov-profile-note", !p.exists);
+      show("ov-export", p.exists);
       if (p.exists) {
         statCard($("ov-profile"), "Roles", String(p.roles), "jobs on record");
         statCard($("ov-profile"), "Accomplishments", String(p.accomplishments), "with evidence");
@@ -1336,6 +1346,27 @@
   $("tab-chat").addEventListener("click", () => { view = "chat"; layout(); $("box").focus(); });
   $("tab-jobs").addEventListener("click", () => { view = "jobs"; layout(); loadJobs(); });
   $("tab-profile").addEventListener("click", () => { view = "profile"; layout(); loadOverview(); });
+  $("ov-export-btn").addEventListener("click", () => {
+    download("/api/profile.md").catch((error) => {
+      $("ov-error").textContent = error.message;
+      show("ov-error", true);
+    });
+  });
+  $("ov-import-btn").addEventListener("click", () => $("ov-import-file").click());
+  $("ov-import-file").addEventListener("change", () => {
+    const file = $("ov-import-file").files[0];
+    $("ov-import-file").value = "";
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      $("ov-error").textContent = file.name + " is larger than 5 MB.";
+      show("ov-error", true);
+      return;
+    }
+    pending.push(file);
+    renderPending();
+    view = "chat"; layout();
+    $("box").focus();
+  });
   $("fn-replay").addEventListener("click", () => HHFunnel.replay($("fn-svg")));
 
   try {
