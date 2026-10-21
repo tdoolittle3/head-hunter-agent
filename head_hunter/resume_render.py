@@ -51,6 +51,13 @@ def _contact_line(profile: Profile) -> str:
     return CONTACT_SEPARATOR.join(part for part in parts if part)
 
 
+def resume_headline(resume: Resume, profile: Profile) -> str:
+    """The headline this resume shows: its own if edited, else the profile's."""
+    if resume.headline is not None:
+        return resume.headline.strip()
+    return (profile.identity.headline or "").strip()
+
+
 def render_markdown(resume: Resume, profile: Profile) -> str:
     """Render a resume as Markdown, the canonical format.
 
@@ -70,8 +77,9 @@ def render_markdown(resume: Resume, profile: Profile) -> str:
     contact = _contact_line(profile)
     if contact:
         lines += [contact, ""]
-    if profile.identity.headline:
-        lines += [profile.identity.headline, ""]
+    headline = resume_headline(resume, profile)
+    if headline:
+        lines += [headline, ""]
 
     for section in resume.sections:
         lines.append(f"## {section.title}")

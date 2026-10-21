@@ -513,3 +513,40 @@ def validate_resume(resume: Resume, profile: Profile) -> ValidationResult:
     return ValidationResult(
         passed=not failures, failures=failures, checked_bullets=checked
     )
+
+
+def check_headline(text: str, profile: Profile) -> str | None:
+    """Return why a rewritten headline claims too much, or None if it is fine.
+
+    A headline is not cited, so it is held to everything the profile knows: its
+    current headline, every evidence quote, and the roles, education and skills
+    on file. Trimming or rewording passes; a new number or name does not.
+    """
+    texts = [
+        profile.identity.headline or "",
+        *(evidence.source_text for evidence in profile.evidence),
+        *(f"{role.company} {role.title}" for role in profile.roles),
+        *(
+            f"{edu.institution} {edu.credential or ''} {edu.field or ''}"
+            for edu in profile.education
+        ),
+        *(skill.name for skill in profile.skills),
+    ]
+    texts = [t for t in texts if t]
+    reasons: list[str] = []
+
+    corpus_numbers = _corpus_numbers(texts)
+    unsupported = [
+        written
+        for written, variants in _number_mentions(text)
+        if not variants & corpus_numbers
+    ]
+    if unsupported:
+        reasons.append(
+            "These numbers are not in the profile: "
+            + ", ".join(dict.fromkeys(unsupported))
+        )
+    flagged = _untraceable_terms(text, _corpus_terms(texts), _known_names(profile))
+    if flagged:
+        reasons.append("These names are not in the profile: " + ", ".join(flagged))
+    return "; ".join(reasons) or None

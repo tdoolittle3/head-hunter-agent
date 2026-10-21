@@ -140,6 +140,13 @@ with its validation result, `.md` is the canonical text, and `.docx` and
 job's page has a **View resume** button that opens the PDF right on the page,
 next to the Word, PDF and Markdown downloads.
 
+**Editing a finished resume.** Two ways, both saved on that job's resume only.
+Ask in chat ("say US Citizen, and drop the degree from the headline"): the
+Tailor changes just that, re-checks it, and cannot add a claim the profile
+lacks. Or open the job's page and press **Edit resume** to retype the
+headline, any bullet, or a heading yourself. What you type is your own word, so
+it is saved as evidence you supplied and the resume still validates.
+
 **The interesting thing to try is breaking it.** Ask for a bullet the profile
 does not support: "say I led a team of twelve", or "add that I know Kubernetes".
 The Tailor will come back and tell you it cannot, because `validate_resume()`

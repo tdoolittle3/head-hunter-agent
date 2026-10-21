@@ -65,11 +65,13 @@ from head_hunter.overview import Overview, compute_overview
 from head_hunter.profile_export import render_profile_markdown
 from head_hunter.purge import purge_session_records
 from head_hunter.ratelimit import RateLimiter
+from head_hunter.resume_edit import ResumeEditError, apply_manual_edit
 from head_hunter.resume_render import (
     MarkdownRenderError,
     render_docx,
     render_markdown,
     render_pdf,
+    resume_headline,
 )
 from head_hunter.schemas import JobPosting, UploadedDocument
 from head_hunter.storage import Repository, StorageError
@@ -103,6 +105,29 @@ class ChatRequest(BaseModel):
             "continued conversation keeps the job it started with."
         ),
     )
+
+
+class ResumeBulletBody(BaseModel):
+    """One bullet in the resume editor."""
+
+    text: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ResumeSectionBody(BaseModel):
+    """One section in the resume editor."""
+
+    title: str
+    subtitle: str | None = None
+    bullets: list[ResumeBulletBody]
+
+
+class ResumeBody(BaseModel):
+    """A resume as the editor shows it and sends it back."""
+
+    headline: str
+    sections: list[ResumeSectionBody]
+    validation_passed: bool = True
 
 
 class UploadResponse(BaseModel):
@@ -528,6 +553,83 @@ def create_app(
                 detail="No resume for this job yet. Ask for one in the chat.",
             )
         return job, render_markdown(resume, profile)
+
+    @api.get("/api/jobs/{job_id}/resume", response_model=ResumeBody)
+    def resume_for_editing(
+        job_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> ResumeBody:
+        """The resume as editable fields, the headline as it will print."""
+        try:
+            repo = open_repository()
+            resume = repo.get_resume(user.uid, job_id)
+            profile = repo.get_profile(user.uid)
+        except StorageError:
+            logger.exception("Could not load the resume for job %s", job_id)
+            raise HTTPException(
+                status_code=500, detail="Could not load that resume. Try again."
+            ) from None
+        if resume is None or profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No resume for this job yet. Ask for one in the chat.",
+            )
+        return ResumeBody(
+            headline=resume_headline(resume, profile),
+            sections=[
+                ResumeSectionBody(
+                    title=s.title,
+                    subtitle=s.subtitle,
+                    bullets=[
+                        ResumeBulletBody(text=b.text, evidence_ids=b.evidence_ids)
+                        for b in s.bullets
+                    ],
+                )
+                for s in resume.sections
+            ],
+            validation_passed=bool(resume.validation and resume.validation.passed),
+        )
+
+    @api.put("/api/jobs/{job_id}/resume", response_model=ResumeBody)
+    def save_resume_edits(
+        job_id: str,
+        body: ResumeBody,
+        user: Annotated[VerifiedUser, Depends(current_user)],
+    ) -> ResumeBody:
+        """Save the user's hand edits to a resume and refresh its stored files.
+
+        What the user typed is their own word, so new or changed bullets are
+        recorded as ``user_edit`` evidence (see ``head_hunter.resume_edit``).
+        """
+        try:
+            repo = open_repository()
+            resume = repo.get_resume(user.uid, job_id)
+            profile = repo.get_profile(user.uid)
+            if resume is None or profile is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No resume for this job yet. Ask for one in the chat.",
+                )
+            try:
+                apply_manual_edit(
+                    resume,
+                    profile,
+                    body.headline,
+                    [s.model_dump() for s in body.sections],
+                )
+            except ResumeEditError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+            repo.save_profile(profile)
+            repo.save_resume(resume)
+            markdown = render_markdown(resume, profile)
+            repo.save_resume_document(user.uid, job_id, "md", markdown.encode("utf-8"))
+            repo.save_resume_document(user.uid, job_id, "docx", render_docx(markdown))
+            repo.save_resume_document(user.uid, job_id, "pdf", render_pdf(markdown))
+        except (StorageError, MarkdownRenderError):
+            logger.exception("Could not save edits to the resume for job %s", job_id)
+            raise HTTPException(
+                status_code=500, detail="Could not save your edits. Try again."
+            ) from None
+        return resume_for_editing(job_id, user)
 
     @api.get("/api/jobs/{job_id}/resume.md")
     def resume_markdown(

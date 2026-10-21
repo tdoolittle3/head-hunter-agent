@@ -33,6 +33,7 @@ from head_hunter.tools.profile_tools import (
     save_profile,
 )
 from head_hunter.tools.resume_tools import (
+    edit_resume,
     load_tailoring_context,
     render_resume,
     save_resume,
@@ -56,7 +57,7 @@ INTAKE_TOOLS = [prepare_job_text, save_job_posting, list_jobs]
 
 FIT_ANALYST_TOOLS = [load_job_and_profile, save_fit_report, get_fit_report]
 
-RESUME_TAILOR_TOOLS = [load_tailoring_context, save_resume, render_resume]
+RESUME_TAILOR_TOOLS = [load_tailoring_context, save_resume, edit_resume, render_resume]
 
 COACH_TOOLS = [
     list_jobs,
@@ -93,6 +94,7 @@ __all__ = [
     "load_uploaded_resume",
     "log_application_event",
     "prepare_job_text",
+    "edit_resume",
     "render_resume",
     "report_tool_error",
     "save_fit_report",

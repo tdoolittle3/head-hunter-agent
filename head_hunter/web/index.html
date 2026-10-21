@@ -260,6 +260,22 @@
   #viewer-bar { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px;
     border-bottom: 1px solid var(--line); }
   #viewer-title { flex: 1; font: 500 13px var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+  #editor { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 14, .72);
+    display: flex; align-items: center; justify-content: center; padding: 20px; }
+  #editor-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    width: min(860px, 100%); height: calc(100vh - 40px); display: flex; flex-direction: column; overflow: hidden; }
+  #editor-body { flex: 1; overflow-y: auto; padding: 16px 20px 28px; }
+  #editor-body label { display: block; font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--dim); margin: 18px 0 6px; }
+  #editor-body textarea, #editor-body input { width: 100%; box-sizing: border-box; max-height: none;
+    font: inherit; font-size: 16px; color: var(--text); background: var(--ink); border: 1px solid var(--line);
+    border-radius: 4px; padding: 9px 11px; }
+  #editor-body textarea { resize: vertical; min-height: 44px; }
+  .ed-section { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 4px; }
+  .ed-bullet { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+  .ed-bullet button, .ed-actions button { padding: 6px 10px; font-size: 11px; }
+  .ed-actions { display: flex; gap: 8px; margin-top: 10px; }
+  #editor-note { color: var(--dim); font-size: 13px; margin: 0; }
   #viewer-frame { flex: 1; width: 100%; border: 0; background: #3c4049; }
 
   /* Profile page and the funnel graph on it */
@@ -510,6 +526,17 @@
       </button>
     </div>
     <iframe id="viewer-frame" title="Resume"></iframe>
+  </div>
+</div>
+
+<div id="editor" hidden>
+  <div id="editor-panel" role="dialog" aria-modal="true" aria-label="Edit resume">
+    <div id="viewer-bar">
+      <span id="viewer-title">Edit resume</span>
+      <button type="button" class="primary" id="editor-save">Save</button>
+      <button type="button" id="editor-cancel">Cancel</button>
+    </div>
+    <div id="editor-body"></div>
   </div>
 </div>
 
@@ -1211,6 +1238,108 @@
     return req;
   }
 
+  // Hand-editing a resume. Whatever is typed here is the user's own word; the
+  // server records new or changed lines as evidence they supplied.
+  let editorJob = null;
+
+  function closeEditor() {
+    show("editor", false);
+    editorJob = null;
+  }
+
+  function bulletRow(list, bullet) {
+    const row = el("div", "ed-bullet");
+    const box = el("textarea");
+    box.value = bullet.text;
+    box.rows = 2;
+    row._ids = bullet.evidence_ids || [];
+    const drop = el("button", null, "Remove");
+    drop.type = "button";
+    drop.addEventListener("click", () => row.remove());
+    row.append(box, drop);
+    list.appendChild(row);
+    return box;
+  }
+
+  function sectionBlock(section) {
+    const block = el("div", "ed-section");
+    const title = el("input");
+    title.value = section.title;
+    const sub = el("input");
+    sub.value = section.subtitle || "";
+    block.append(el("label", null, "Heading"), title, el("label", null, "Dates / detail"), sub);
+    const list = el("div");
+    for (const b of section.bullets) bulletRow(list, b);
+    block.appendChild(list);
+    const actions = el("div", "ed-actions");
+    const add = el("button", null, "Add bullet");
+    add.type = "button";
+    add.addEventListener("click", () => bulletRow(list, { text: "", evidence_ids: [] }).focus());
+    const del = el("button", null, "Remove section");
+    del.type = "button";
+    del.addEventListener("click", () => block.remove());
+    actions.append(add, del);
+    block.appendChild(actions);
+    block._read = () => ({
+      title: title.value,
+      subtitle: sub.value,
+      bullets: [...list.children].map((row) => ({
+        text: row.querySelector("textarea").value,
+        evidence_ids: row._ids,
+      })),
+    });
+    return block;
+  }
+
+  async function editResume(jobId) {
+    const res = await fetch("/api/jobs/" + encodeURIComponent(jobId) + "/resume", {
+      headers: { Authorization: "Bearer " + await idToken() },
+    });
+    if (!res.ok) throw await failure(res, "Could not load the resume.");
+    const data = await res.json();
+    editorJob = jobId;
+    const body = $("editor-body");
+    const note = el("p", null, "These are your own words: what you type here goes on the resume "
+      + "exactly as written and is saved as something you said. Headline edits apply to this "
+      + "resume only, not your profile.");
+    note.id = "editor-note";
+    body.replaceChildren(note);
+    const headline = el("input");
+    headline.id = "editor-headline";
+    headline.value = data.headline;
+    body.append(el("label", null, "Headline"), headline);
+    for (const section of data.sections) body.appendChild(sectionBlock(section));
+    show("editor", true);
+    headline.focus();
+  }
+
+  async function saveEditor() {
+    const save = $("editor-save");
+    save.disabled = true;
+    try {
+      const sections = [...$("editor-body").querySelectorAll(".ed-section")].map((b) => b._read());
+      const res = await fetch("/api/jobs/" + encodeURIComponent(editorJob) + "/resume", {
+        method: "PUT",
+        headers: { Authorization: "Bearer " + await idToken(), "Content-Type": "application/json" },
+        body: JSON.stringify({ headline: $("editor-headline").value, sections }),
+      });
+      if (!res.ok) throw await failure(res, "Could not save your edits.");
+      const jobId = editorJob;
+      closeEditor();
+      await openJob(jobId);
+    } catch (error) {
+      jbError(error);
+    } finally {
+      save.disabled = false;
+    }
+  }
+
+  $("editor-save").addEventListener("click", saveEditor);
+  $("editor-cancel").addEventListener("click", closeEditor);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("editor").hidden) closeEditor();
+  });
+
   function renderJob(d) {
     const box = $("jb-detail");
     box.replaceChildren();
@@ -1253,6 +1382,10 @@
       const view = el("button", "primary", "View resume");
       view.addEventListener("click", () => viewResume(base + "pdf").catch(jbError));
       downloads.appendChild(view);
+      const edit = el("button", null, "Edit resume");
+      edit.title = "Change the wording by hand";
+      edit.addEventListener("click", () => editResume(d.job_id).catch(jbError));
+      downloads.appendChild(edit);
       for (const [suffix, label] of [["docx", "Word"], ["pdf", "PDF"], ["md", "Markdown"]]) {
         const button = el("button", null, label);
         button.title = "Download the resume as " + label;
