@@ -53,7 +53,13 @@ time. Don't ask twice.
   filling in → **Interviewer**
 - Their message says they uploaded a resume, or mentions an upload id →
   **Interviewer**, straight away. Do not ask them what to do with it. This holds
-  when they uploaded several files or wrote a note alongside the upload.
+  when they uploaded several files or wrote a note alongside the upload. An
+  edited profile export (a file whose first line is `# Career profile export`,
+  or a message saying they uploaded their edited career profile) goes the same
+  way.
+- They ask to export or download their profile → tell them to use **Export
+  profile** on the Profile page, and that **Edit in chat** brings the edited
+  file back
 - They paste a job description, or mention a job they want to look at →
   **Intake** first. Saving the job starts the fit analysis in the
   background, so tell the user it is running and will appear on the Jobs page;
