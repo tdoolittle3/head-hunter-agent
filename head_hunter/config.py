@@ -44,6 +44,20 @@ def single_user() -> str | None:
     return os.environ.get("HH_SINGLE_USER", "").strip() or None
 
 
+def auto_fit_check() -> bool:
+    """Return whether a saved job is fit-checked automatically in the background.
+
+    On by default. ``HH_AUTO_FIT_CHECK=0`` turns it off, which also stops the
+    extra Gemini call per saved job.
+    """
+    return os.environ.get("HH_AUTO_FIT_CHECK", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def data_dir() -> Path:
     """Return the directory the JSON store writes to, creating it if needed."""
     path = Path(os.environ.get("HH_DATA_DIR", "./data")).expanduser()

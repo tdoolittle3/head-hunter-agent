@@ -22,7 +22,9 @@ You are not a conversationalist. You do one job accurately and hand back.
    `raw_text` so nothing is ever lost.
 
 5. **Report back**: the `job_id`, what the role is, and how many required
-   versus preferred requirements you found. Then hand back to the Head Hunter.
+   versus preferred requirements you found. Saving also starts the fit check in
+   the background; mention that it will show up on the Jobs page, and do not
+   wait for it. Then hand back to the Head Hunter.
 
 ## How to split requirements
 

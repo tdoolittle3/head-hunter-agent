@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from google.adk.tools import ToolContext
 
+from head_hunter.background import start_fit_check
 from head_hunter.jd_text import clean_job_text, looks_like_job_posting
 from head_hunter.schemas import JobPosting, Requirement, new_id
 from head_hunter.tools._base import (
@@ -142,10 +143,18 @@ def save_job_posting(
     )
     repo.save_job(job, create_only=True)
     remember_job_in_session(tool_context, job.id)
+    fit_check_started = start_fit_check(job.user_id, job.id, job.session_id)
 
     return {
         "status": "saved",
         "job_id": job.id,
+        "fit_check": (
+            "started in the background; the score will appear on the Jobs "
+            "page when it is ready. Do not run a fit analysis now unless the "
+            "user asks."
+            if fit_check_started
+            else "not started"
+        ),
         "company": company,
         "title": title,
         "required_count": sum(1 for r in parsed if r.kind == "required"),
