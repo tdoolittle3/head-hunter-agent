@@ -128,12 +128,14 @@ def test_deleting_a_resume_takes_its_rendered_files(repo: JsonRepository) -> Non
     repo.save_resume(Resume(user_id=USER, job_id="job-a"))
     repo.save_resume_document(USER, "job-a", "md", b"# resume")
     repo.save_resume_document(USER, "job-a", "docx", b"bytes")
+    repo.save_resume_document(USER, "job-a", "pdf", b"%PDF-")
 
     repo.delete_resume(USER, "job-a")
 
     assert repo.get_resume(USER, "job-a") is None
     assert not repo.resume_path("job-a", "md").exists()
     assert not repo.resume_path("job-a", "docx").exists()
+    assert not repo.resume_path("job-a", "pdf").exists()
 
 
 def test_one_user_cannot_delete_anothers_records(repo: JsonRepository) -> None:

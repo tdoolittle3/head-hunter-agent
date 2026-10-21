@@ -233,7 +233,7 @@ class FirestoreRepository(Repository):
             return
         checked = _check_id(job_id, "job_id")
         self._delete(self._doc(user_id, "resumes", checked))
-        for suffix in ("md", "docx"):
+        for suffix in ("md", "docx", "pdf"):
             self._delete(self._doc(user_id, "resume_documents", f"{checked}.{suffix}"))
 
     def delete_journal_entry(self, user_id: str, entry_id: str) -> None:

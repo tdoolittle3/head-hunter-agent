@@ -1,8 +1,8 @@
-"""Markdown is canonical; DOCX is rendered from it.
+"""Markdown is canonical; DOCX and PDF are rendered from it.
 
-So the tests check the Markdown closely and then check that the DOCX really
-came through that Markdown -- if the two ever diverge, the thing the user reads
-and the thing the employer opens stop agreeing.
+So the tests check the Markdown closely and then check that the DOCX and the
+PDF really came through that Markdown -- if they ever diverge, the thing the
+user reads and the thing the employer opens stop agreeing.
 """
 
 from __future__ import annotations
@@ -11,11 +11,13 @@ import io
 
 import pytest
 from docx import Document
+from pypdf import PdfReader
 
 from head_hunter.resume_render import (
     MarkdownRenderError,
     render_docx,
     render_markdown,
+    render_pdf,
 )
 from head_hunter.schemas import (
     Identity,
@@ -162,3 +164,54 @@ def test_unsupported_markdown_is_refused_not_dropped(bad: str) -> None:
     """Rule 6: a line silently missing from a resume is the worse failure."""
     with pytest.raises(MarkdownRenderError):
         render_docx(bad)
+
+
+# PDF --------------------------------------------------------------------
+
+
+def pdf_text(data: bytes) -> str:
+    reader = PdfReader(io.BytesIO(data))
+    return "\n".join(page.extract_text() for page in reader.pages)
+
+
+def test_pdf_carries_every_line_of_the_markdown(
+    profile: Profile, resume: Resume
+) -> None:
+    data = render_pdf(render_markdown(resume, profile))
+    text = pdf_text(data)
+
+    assert data[:5] == b"%PDF-"
+    assert "Jordan Reyes" in text
+    assert "Cut month-end close." in text
+    assert "Mentored two engineers." in text
+    assert "jordan@example.com" in text
+
+
+def test_pdf_title_is_the_candidates_name(profile: Profile, resume: Resume) -> None:
+    """The browser tab in the document viewer should say whose resume it is."""
+    reader = PdfReader(io.BytesIO(render_pdf(render_markdown(resume, profile))))
+    assert reader.metadata.title == "Jordan Reyes"
+
+
+def test_pdf_keeps_characters_the_built_in_fonts_cannot_spell() -> None:
+    """Names and evidence quotes are not ASCII; the embedded font must carry them."""
+    markdown = "# Zoë Núñez-Łaska\n\n## Experience\n\n- Cut “close” — by 80%.\n"
+    text = pdf_text(render_pdf(markdown))
+
+    assert "Zoë Núñez-Łaska" in text
+    assert "Cut “close” — by 80%." in text
+
+
+def test_a_hand_edited_markdown_file_re_renders_as_pdf() -> None:
+    edited = "# Jordan Reyes\n\n## Experience\n\n- A bullet typed by hand.\n"
+    text = pdf_text(render_pdf(edited))
+
+    assert "Jordan Reyes" in text
+    assert "Experience" in text
+    assert "A bullet typed by hand." in text
+
+
+@pytest.mark.parametrize("bad", ["| a | b |\n", "```python\nx = 1\n```\n"])
+def test_unsupported_markdown_is_refused_by_the_pdf_too(bad: str) -> None:
+    with pytest.raises(MarkdownRenderError):
+        render_pdf(bad)

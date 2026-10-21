@@ -119,7 +119,7 @@ class Repository(ABC):
         Args:
             user_id: Whose resume this is.
             job_id: The posting it targets.
-            suffix: File extension without the dot, ``md`` or ``docx``.
+            suffix: File extension without the dot: ``md``, ``docx`` or ``pdf``.
             content: The rendered bytes.
 
         Returns:

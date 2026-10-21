@@ -18,7 +18,7 @@
     "|\\*([^*]+)\\*" +                         // *italic*
     "|\\b_([^_]+)_\\b" +                       // _italic_
     "|\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+" +    // [text](https://url)
-    "|\\/api\\/jobs\\/[\\w-]+\\/resume\\.(?:docx|md))\\)"  // or a resume download
+    "|\\/api\\/jobs\\/[\\w-]+\\/resume\\.(?:docx|md|pdf))\\)"  // or a resume download
   );
 
   function inline(parent, text) {

@@ -124,10 +124,12 @@ Everything lands as readable JSON under `data/` -- open the files and check
 them. `data/profile.json` should contain your actual words under `evidence`;
 if it contains anything you did not say, that is a bug worth reporting.
 
-The resume lands three times over: `data/resumes/<job_id>.json` is the record
-with its validation result, `.md` is the canonical text, and `.docx` is the
-file you would actually send. Markdown is the source of truth -- edit it and
-re-render and your edit survives.
+The resume lands four times over: `data/resumes/<job_id>.json` is the record
+with its validation result, `.md` is the canonical text, and `.docx` and
+`.pdf` are the files you would actually send. Markdown is the source of truth
+-- edit it and re-render and your edit survives. On the signed-in server, the
+job's page has a **View resume** button that opens the PDF right on the page,
+next to the Word, PDF and Markdown downloads.
 
 **The interesting thing to try is breaking it.** Ask for a bullet the profile
 does not support: "say I led a team of twelve", or "add that I know Kubernetes".
@@ -231,8 +233,6 @@ manual — run the Deploy workflow by hand and choose `prod`.
    timestamps, which cannot tell apart two writes inside one clock tick. Fine
    for one user at a time; replace it with a version counter or a Firestore
    transaction before one person can write from two places at once.
-4. **Resume download from the page** — the DOCX is written, but the page has no
-   download button yet.
 
 ## Project layout
 
@@ -254,7 +254,8 @@ head_hunter/
   jd_text.py     deterministic job-description clean-up
   doc_text.py    turns an uploaded PDF / Word / text file into text, and checks quotes
   resume_validation.py  validate_resume() -- the traceability check, plain Python
-  resume_render.py      Resume -> Markdown -> DOCX
+  resume_render.py      Resume -> Markdown -> DOCX and PDF
+  fonts/                Carlito, embedded in the PDF so any name renders
   funnel.py             journal entries -> per-stage counts for the funnel graph
   overview.py           profile, jobs and journal -> the Profile page's numbers
   evals/         ADK eval sets + fixture profile, for hallucination checks
@@ -263,7 +264,7 @@ data/            local JSON store (gitignored)
   jobs/            one file per posting
   fit_reports/     one file per analysis
   uploads/         the text of each uploaded resume
-  resumes/         one .json record, .md and .docx per posting
+  resumes/         one .json record, .md, .docx and .pdf per posting
 docs/            deeper design notes: PLAN.md, DEPLOY.md
 tests/           pytest suite
 AGENTS.md        conventions for AI coding agents and humans alike
