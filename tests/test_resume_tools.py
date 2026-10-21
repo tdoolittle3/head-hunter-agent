@@ -250,18 +250,21 @@ def test_a_resume_for_an_unknown_job_is_refused(seeded: dict) -> None:
 # render_resume ----------------------------------------------------------
 
 
-def test_rendering_writes_both_files(seeded: dict) -> None:
+def test_rendering_writes_all_three_files(seeded: dict) -> None:
     save_resume(seeded["job_id"], good_sections(seeded["evidence_id"]))
     result = render_resume(seeded["job_id"])
 
     assert result["status"] == "rendered"
     markdown_path = Path(result["markdown_path"])
     docx_path = Path(result["docx_path"])
+    pdf_path = Path(result["pdf_path"])
 
-    assert markdown_path.is_file() and docx_path.is_file()
+    assert markdown_path.is_file() and docx_path.is_file() and pdf_path.is_file()
     assert markdown_path.read_text(encoding="utf-8") == result["markdown"]
     assert docx_path.read_bytes()[:2] == b"PK"  # a .docx is a zip
+    assert pdf_path.read_bytes()[:5] == b"%PDF-"
     assert result["docx_link"] == f"/api/jobs/{seeded['job_id']}/resume.docx"
+    assert result["pdf_link"] == f"/api/jobs/{seeded['job_id']}/resume.pdf"
     assert "Staff Engineer, Acme Foods" in result["markdown"]
 
 

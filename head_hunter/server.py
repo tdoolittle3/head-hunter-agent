@@ -63,7 +63,12 @@ from head_hunter.job_views import (
 from head_hunter.overview import Overview, compute_overview
 from head_hunter.purge import purge_session_records
 from head_hunter.ratelimit import RateLimiter
-from head_hunter.resume_render import MarkdownRenderError, render_docx, render_markdown
+from head_hunter.resume_render import (
+    MarkdownRenderError,
+    render_docx,
+    render_markdown,
+    render_pdf,
+)
 from head_hunter.schemas import JobPosting, UploadedDocument
 from head_hunter.storage import Repository, StorageError
 from head_hunter.tools._base import repository as default_repository
@@ -530,6 +535,29 @@ def create_app(
             headers={
                 "Content-Disposition": (
                     f'attachment; filename="{_resume_filename(job, "docx")}"'
+                )
+            },
+        )
+
+    @api.get("/api/jobs/{job_id}/resume.pdf")
+    def resume_pdf(
+        job_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> Response:
+        """The same resume as a PDF, for the download button and the viewer."""
+        job, markdown = rendered_resume(user.uid, job_id)
+        try:
+            content = render_pdf(markdown)
+        except MarkdownRenderError:
+            logger.exception("Could not render the resume for job %s", job_id)
+            raise HTTPException(
+                status_code=500, detail="Could not render the resume file."
+            ) from None
+        return Response(
+            content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{_resume_filename(job, "pdf")}"'
                 )
             },
         )

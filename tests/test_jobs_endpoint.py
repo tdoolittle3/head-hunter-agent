@@ -115,7 +115,7 @@ def test_the_detail_quotes_evidence(api: TestClient, store: JsonRepository) -> N
     assert api.get("/api/jobs/nope", headers=bearer("alice-token")).status_code == 404
 
 
-def test_a_resume_can_be_downloaded_in_both_formats(
+def test_a_resume_can_be_downloaded_in_every_format(
     api: TestClient, store: JsonRepository
 ) -> None:
     saved_job(store)
@@ -140,6 +140,12 @@ def test_a_resume_can_be_downloaded_in_both_formats(
     assert docx.headers["content-type"].startswith(server.DOCX_MEDIA_TYPE)
     assert 'filename="resume-acme-engineer.docx"' in docx.headers["content-disposition"]
     assert docx.content[:2] == b"PK"  # a zip container, like every real .docx
+
+    pdf = api.get("/api/jobs/job-a/resume.pdf", headers=bearer("alice-token"))
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+    assert 'filename="resume-acme-engineer.pdf"' in pdf.headers["content-disposition"]
+    assert pdf.content[:5] == b"%PDF-"
 
     markdown = api.get("/api/jobs/job-a/resume.md", headers=bearer("alice-token"))
     assert markdown.status_code == 200

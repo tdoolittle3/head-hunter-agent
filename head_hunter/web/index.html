@@ -252,6 +252,16 @@
   .jb-downloads { display: flex; gap: 10px; align-items: center; margin-top: 28px; flex-wrap: wrap; }
   #fatal { padding: 40px 0; color: var(--ember); }
 
+  /* The document viewer: the resume PDF, shown without leaving the page */
+  #viewer { position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 14, .72);
+    display: flex; align-items: center; justify-content: center; padding: 20px; }
+  #viewer-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    width: min(860px, 100%); height: calc(100vh - 40px); display: flex; flex-direction: column; overflow: hidden; }
+  #viewer-bar { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px;
+    border-bottom: 1px solid var(--line); }
+  #viewer-title { flex: 1; font: 500 13px var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+  #viewer-frame { flex: 1; width: 100%; border: 0; background: #3c4049; }
+
   /* Profile page and the funnel graph on it */
   #profile { padding: 24px 0 48px; }
   #profile .eyebrow { margin: 32px 0 0; }
@@ -480,6 +490,22 @@
     <div class="cta"><button id="acct-out">Sign out</button></div>
   </section>
 </main>
+
+<div id="viewer" hidden>
+  <div id="viewer-panel" role="dialog" aria-modal="true" aria-label="Resume viewer">
+    <div id="viewer-bar">
+      <span id="viewer-title"></span>
+      <button type="button" id="viewer-download">Download</button>
+      <button type="button" class="icon-btn" id="viewer-close" aria-label="Close viewer" title="Close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
+    </div>
+    <iframe id="viewer-frame" title="Resume"></iframe>
+  </div>
+</div>
 
 <script src="/funnel.js"></script>
 <script src="/markdown.js"></script>
@@ -1127,6 +1153,43 @@
     download(event.detail).catch((error) => addMessage(error.message, "err"));
   });
 
+  // The document viewer: fetch the PDF with the sign-in token (a plain iframe
+  // src cannot carry it), then hand the bytes to the browser's own PDF viewer.
+  let viewerUrl = null;
+  let viewerPath = null;
+
+  function closeViewer() {
+    show("viewer", false);
+    $("viewer-frame").removeAttribute("src");
+    if (viewerUrl) { URL.revokeObjectURL(viewerUrl); viewerUrl = null; }
+    viewerPath = null;
+  }
+
+  async function viewResume(path) {
+    const res = await fetch(path, { headers: { Authorization: "Bearer " + await idToken() } });
+    if (!res.ok) throw await failure(res, "Could not load the resume.");
+    const match = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+    const blob = new Blob([await res.blob()], { type: "application/pdf" });
+    closeViewer();
+    viewerUrl = URL.createObjectURL(blob);
+    viewerPath = path;
+    $("viewer-title").textContent = match ? match[1] : "resume.pdf";
+    $("viewer-frame").src = viewerUrl;
+    show("viewer", true);
+    $("viewer-close").focus();
+  }
+
+  $("viewer-close").addEventListener("click", closeViewer);
+  $("viewer-download").addEventListener("click", () => {
+    if (viewerPath) download(viewerPath).catch(jbError);
+  });
+  $("viewer").addEventListener("click", (event) => {
+    if (event.target === $("viewer")) closeViewer();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("viewer").hidden) closeViewer();
+  });
+
   function requirementBlock(item, tag) {
     const req = el("div", "req");
     const head = el("h3", null, item.requirement);
@@ -1178,12 +1241,15 @@
     const downloads = el("div", "jb-downloads");
     if (d.has_resume) {
       const base = "/api/jobs/" + encodeURIComponent(d.job_id) + "/resume.";
-      const docx = el("button", "primary", "Download resume (Word)");
-      docx.addEventListener("click", () => download(base + "docx").catch(jbError));
-      const md = el("button", null, "Markdown");
-      md.addEventListener("click", () => download(base + "md").catch(jbError));
-      downloads.appendChild(docx);
-      downloads.appendChild(md);
+      const view = el("button", "primary", "View resume");
+      view.addEventListener("click", () => viewResume(base + "pdf").catch(jbError));
+      downloads.appendChild(view);
+      for (const [suffix, label] of [["docx", "Word"], ["pdf", "PDF"], ["md", "Markdown"]]) {
+        const button = el("button", null, label);
+        button.title = "Download the resume as " + label;
+        button.addEventListener("click", () => download(base + suffix).catch(jbError));
+        downloads.appendChild(button);
+      }
     } else {
       downloads.appendChild(el("p", "ov-note",
         "No tailored resume yet — ask for one in the chat."));

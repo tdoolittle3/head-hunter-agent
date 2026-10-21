@@ -11,6 +11,7 @@ to open these files and read them:
       resumes/<job_id>.json   the record
       resumes/<job_id>.md     the canonical rendering
       resumes/<job_id>.docx   the file you send
+      resumes/<job_id>.pdf    the same resume as a PDF
       journal/<entry_id>.json one event in the job search
 
 Writes go to a temporary file and are then moved into place, so a crash
@@ -242,10 +243,10 @@ class JsonRepository(Repository):
             self._unlink(self.fit_report_path(job_id))
 
     def delete_resume(self, user_id: str, job_id: str) -> None:
-        """Remove the resume record and its rendered .md and .docx files."""
+        """Remove the resume record and its rendered .md, .docx and .pdf files."""
         if self.get_resume(user_id, job_id) is None:
             return
-        for suffix in ("json", "md", "docx"):
+        for suffix in ("json", "md", "docx", "pdf"):
             self._unlink(self.resume_path(job_id, suffix))
 
     def delete_journal_entry(self, user_id: str, entry_id: str) -> None:

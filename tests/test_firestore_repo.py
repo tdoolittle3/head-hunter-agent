@@ -254,11 +254,13 @@ def test_deleting_a_resume_takes_its_rendered_documents(
 
     repo.save_resume(Resume(user_id=USER, job_id="job-a"))
     repo.save_resume_document(USER, "job-a", "md", b"# resume")
+    repo.save_resume_document(USER, "job-a", "pdf", b"%PDF-")
 
     repo.delete_resume(USER, "job-a")
 
     assert repo.get_resume(USER, "job-a") is None
     assert repo.get_resume_document(USER, "job-a", "md") is None
+    assert repo.get_resume_document(USER, "job-a", "pdf") is None
 
 
 def test_profile_for_the_wrong_user_raises(repo: FirestoreRepository) -> None:

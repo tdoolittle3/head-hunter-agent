@@ -17,7 +17,7 @@ from __future__ import annotations
 from google.adk.tools import ToolContext
 from pydantic import ValidationError
 
-from head_hunter.resume_render import render_docx, render_markdown
+from head_hunter.resume_render import render_docx, render_markdown, render_pdf
 from head_hunter.resume_validation import validate_resume
 from head_hunter.schemas import Resume, ResumeBullet, ResumeSection
 from head_hunter.tools._base import (
@@ -323,13 +323,16 @@ def render_resume(job_id: str, tool_context: ToolContext | None = None) -> dict:
     docx_path = repo.save_resume_document(
         user_id, job_id, "docx", render_docx(markdown)
     )
+    pdf_path = repo.save_resume_document(user_id, job_id, "pdf", render_pdf(markdown))
 
     return {
         "status": "rendered",
         "job_id": job_id,
         "markdown_path": markdown_path,
         "docx_path": docx_path,
+        "pdf_path": pdf_path,
         "docx_link": f"/api/jobs/{job_id}/resume.docx",
+        "pdf_link": f"/api/jobs/{job_id}/resume.pdf",
         "markdown_link": f"/api/jobs/{job_id}/resume.md",
         "bullet_count": resume.validation.checked_bullets,
         "markdown": markdown,
