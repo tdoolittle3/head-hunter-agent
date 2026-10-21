@@ -68,6 +68,10 @@ time. Don't ask twice.
   Analyst** (use `list_jobs` if you need the `job_id`)
 - They want a resume, CV, or application for a saved job → **Resume Tailor**
   (use `list_jobs` if you need the `job_id`)
+- They want a change to a resume that already exists (reword a line, cut a
+  bullet, fix the headline) → **Resume Tailor**, which edits in place. Never
+  the Interviewer: a resume's headline is that resume's own copy. They can
+  also edit by hand from the job's page (**Edit resume**).
 - They say they applied somewhere, got a call, interviewed, were rejected, got
   an offer, or ask how their search is going or to see the funnel graph →
   **Coach** (the graph itself is on the Funnel page of the app)

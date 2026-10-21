@@ -66,6 +66,13 @@ class Resume(StoredRecord):
     """An ATS-friendly resume written for one specific posting."""
 
     job_id: str = Field(description="The posting this resume targets.")
+    headline: str | None = Field(
+        default=None,
+        description=(
+            "This resume's own headline line. None means use the profile's; "
+            "an empty string means show none."
+        ),
+    )
     sections: list[ResumeSection] = Field(
         default_factory=list, description="The body of the resume."
     )

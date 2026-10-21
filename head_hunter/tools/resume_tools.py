@@ -17,6 +17,7 @@ from __future__ import annotations
 from google.adk.tools import ToolContext
 from pydantic import ValidationError
 
+from head_hunter.resume_edit import ResumeEditError, apply_agent_edit
 from head_hunter.resume_render import render_docx, render_markdown, render_pdf
 from head_hunter.resume_validation import validate_resume
 from head_hunter.schemas import Resume, ResumeBullet, ResumeSection
@@ -271,6 +272,75 @@ def save_resume(
             "Call render_resume to produce the Markdown and DOCX files."
             if result.passed
             else "Fix the bullets listed above and call save_resume again."
+        ),
+    }
+
+
+def edit_resume(
+    job_id: str,
+    headline: str | None = None,
+    replacements: list[dict] | None = None,
+    remove_bullets: list[str] | None = None,
+    remove_sections: list[str] | None = None,
+    tool_context: ToolContext | None = None,
+) -> dict:
+    """Change an existing resume the way the user asked, without rewriting it.
+
+    Use this for small requests like "drop the degree from the headline",
+    "change X to Y in that bullet", or "remove the Skills section". The change
+    is re-checked against the evidence; it can reword and cut but not add a
+    claim the profile does not hold. The headline is this resume's own copy, so
+    editing it does not touch the profile. Call render_resume afterwards.
+
+    Args:
+        job_id: The posting whose resume to change.
+        headline: New headline line for this resume, or an empty string to
+            show none. Leave unset to keep it.
+        replacements: List of dicts, each ``{"find": ..., "replace": ...}``.
+            ``find`` is a piece of text inside exactly one bullet; it is
+            swapped for ``replace``.
+        remove_bullets: Pieces of text, each identifying one bullet to delete.
+        remove_sections: Titles of sections to delete with their bullets.
+        tool_context: Supplied by the system to say whose records these are.
+            Never fill this in.
+
+    Returns:
+        The validation outcome, and the resume's headline.
+    """
+    repo = repository()
+    user_id = current_user_id(tool_context)
+
+    resume = repo.get_resume(user_id, job_id)
+    if resume is None:
+        raise ToolError(
+            f"No resume has been written for {job_id!r} yet. Call save_resume first."
+        )
+    profile = repo.get_profile(user_id)
+    if profile is None:
+        raise ToolError("The profile is gone, so the edit cannot be checked.")
+
+    try:
+        apply_agent_edit(
+            resume, profile, headline, replacements, remove_bullets, remove_sections
+        )
+    except ResumeEditError as exc:
+        raise ToolError(str(exc)) from exc
+
+    repo.save_resume(resume)
+    remember_job_in_session(tool_context, job_id)
+    result = resume.validation
+    return {
+        "status": "validated" if result.passed else "needs_work",
+        "job_id": job_id,
+        "headline": resume.headline,
+        "failures": [
+            {"section": f.section_title, "bullet": f.bullet_text, "reason": f.reason}
+            for f in result.failures
+        ],
+        "next_step": (
+            "Call render_resume to refresh the files."
+            if result.passed
+            else "Fix the bullets listed above with edit_resume or save_resume."
         ),
     }
 

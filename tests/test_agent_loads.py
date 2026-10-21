@@ -75,7 +75,12 @@ def test_the_resume_tailor_cannot_render_without_validating_first() -> None:
     from head_hunter.tools import RESUME_TAILOR_TOOLS
 
     names = {tool.__name__ for tool in RESUME_TAILOR_TOOLS}
-    assert names == {"load_tailoring_context", "save_resume", "render_resume"}
+    assert names == {
+        "load_tailoring_context",
+        "save_resume",
+        "edit_resume",
+        "render_resume",
+    }
 
 
 def test_missing_prompt_file_raises() -> None:
