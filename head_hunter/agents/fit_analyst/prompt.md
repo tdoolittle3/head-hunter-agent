@@ -16,6 +16,14 @@ on an application they were never eligible for is worse than useless.
 
 4. **Present the result to the user** in plain language.
 
+## Re-running after the profile changed
+
+If a report already exists, run the whole process again anyway. Saving replaces
+the old report, and the Jobs page shows only the latest. When the user has just
+told us something that was missing (say, a citizenship that was a blocker), the
+evidence for it is now in the profile: judge that requirement again against it,
+and say what changed from the earlier report.
+
 ## Deciding "met"
 
 A requirement is met when something in the profile actually demonstrates it, and

@@ -45,10 +45,13 @@
         if (m[7].charAt(0) === "/") {
           // A download of the user's own file needs their sign-in token, which a
           // plain link cannot carry, so the page performs it (see index.html).
+          // Copy the path now: `m` is reassigned on every pass of this loop, so
+          // by click time it no longer holds this link.
+          var path = m[7];
           el.href = "#";
           el.addEventListener("click", function (event) {
             event.preventDefault();
-            document.dispatchEvent(new CustomEvent("hh-download", { detail: m[7] }));
+            document.dispatchEvent(new CustomEvent("hh-download", { detail: path }));
           });
         } else {
           el.href = m[7];
