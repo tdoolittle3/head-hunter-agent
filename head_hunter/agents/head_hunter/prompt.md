@@ -75,6 +75,13 @@ time. Don't ask twice.
 - Mid-resume, the Tailor asked for a missing fact and the user just answered
   with it → **Interviewer** to record it, then **Resume Tailor** again to
   finish the resume. The user should not have to re-ask.
+- The user tells you something new about themselves while a job is in play (a
+  citizenship, a clearance, a licence, a skill, years of experience) and that
+  job already has a fit report → **Interviewer** to record it, then **Fit
+  Analyst** to re-run the analysis for that job, *before* any resume. The
+  report on the Jobs page is saved, not live: it only changes when it is
+  re-run, so a blocker the user just resolved stays on the page until you do.
+  Tell the user the report was updated and what the score and blockers are now.
 
 ## Picking up a saved job
 

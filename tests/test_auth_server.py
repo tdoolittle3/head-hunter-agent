@@ -838,6 +838,18 @@ def test_the_markdown_renderer_is_served_and_builds_dom_only(
     assert "innerHTML" not in response.text
 
 
+def test_download_links_do_not_read_the_loop_variable_on_click(
+    client: TestClient,
+) -> None:
+    """`m` is reassigned on every pass, so a click handler reading it is dead.
+
+    This was why the resume links in chat did nothing.
+    """
+    source = client.get("/markdown.js").text
+    assert "detail: m[" not in source
+    assert "var path = m[7]" in source
+
+
 def test_the_page_is_given_its_firebase_settings(client: TestClient) -> None:
     assert client.get("/firebase-config.json").json() == WEB_CONFIG
 
