@@ -18,7 +18,7 @@
     "|\\*([^*]+)\\*" +                         // *italic*
     "|\\b_([^_]+)_\\b" +                       // _italic_
     "|\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+" +    // [text](https://url)
-    "|\\/api\\/jobs\\/[\\w-]+\\/resume\\.(?:docx|md|pdf))\\)"  // or a resume download
+    "|\\/api\\/jobs\\/[\\w-]+\\/resume\\.(?:docx|md|pdf|view))\\)"  // or a resume download
   );
 
   function inline(parent, text) {
@@ -48,10 +48,13 @@
           // Copy the path now: `m` is reassigned on every pass of this loop, so
           // by click time it no longer holds this link.
           var path = m[7];
+          var viewing = /\.view$/.test(path);
           el.href = "#";
           el.addEventListener("click", function (event) {
             event.preventDefault();
-            document.dispatchEvent(new CustomEvent("hh-download", { detail: path }));
+            document.dispatchEvent(viewing
+              ? new CustomEvent("hh-view", { detail: path.replace(/\.view$/, ".pdf") })
+              : new CustomEvent("hh-download", { detail: path }));
           });
         } else {
           el.href = m[7];

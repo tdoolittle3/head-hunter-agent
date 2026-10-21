@@ -1189,6 +1189,10 @@
     download(event.detail).catch((error) => addMessage(error.message, "err"));
   });
 
+  document.addEventListener("hh-view", (event) => {
+    viewResume(event.detail).catch((error) => addMessage(error.message, "err"));
+  });
+
   // The document viewer: fetch the PDF with the sign-in token (a plain iframe
   // src cannot carry it), then hand the bytes to the browser's own PDF viewer.
   let viewerUrl = null;
