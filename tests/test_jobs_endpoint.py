@@ -20,6 +20,7 @@ from head_hunter.schemas import (
     Evidence,
     FitReport,
     JobPosting,
+    JournalEntry,
     MetRequirement,
     Profile,
     Requirement,
@@ -67,6 +68,7 @@ def test_the_jobs_endpoints_require_sign_in(api: TestClient) -> None:
     assert api.get("/api/jobs").status_code == 401
     assert api.get("/api/jobs/job-a").status_code == 401
     assert api.get("/api/jobs/job-a/resume.docx").status_code == 401
+    assert api.delete("/api/jobs/job-a").status_code == 401
 
 
 def test_the_list_carries_scores(api: TestClient, store: JsonRepository) -> None:
@@ -142,6 +144,36 @@ def test_a_resume_can_be_downloaded_in_both_formats(
     markdown = api.get("/api/jobs/job-a/resume.md", headers=bearer("alice-token"))
     assert markdown.status_code == 200
     assert "Did it." in markdown.text
+
+
+def test_removing_a_job_takes_its_report_and_resume(
+    api: TestClient, store: JsonRepository
+) -> None:
+    saved_job(store)
+    store.save_fit_report(
+        FitReport(user_id=USER, job_id="job-a", score=82, summary="Strong")
+    )
+    store.save_resume(Resume(user_id=USER, job_id="job-a"))
+    store.save_journal_entry(
+        JournalEntry(user_id=USER, job_id="job-a", kind="applied", summary="Applied.")
+    )
+
+    response = api.delete("/api/jobs/job-a", headers=bearer("alice-token"))
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "deleted"}
+    assert store.get_job(USER, "job-a") is None
+    assert store.get_fit_report(USER, "job-a") is None
+    assert store.get_resume(USER, "job-a") is None
+    # The record that you applied is not undone by removing the posting.
+    assert [e.job_id for e in store.list_journal_entries(USER)] == ["job-a"]
+    assert api.get("/api/jobs/job-a", headers=bearer("alice-token")).status_code == 404
+
+
+def test_removing_a_job_that_is_not_there_is_a_404(api: TestClient) -> None:
+    response = api.delete("/api/jobs/nope", headers=bearer("alice-token"))
+
+    assert response.status_code == 404
 
 
 def test_a_job_without_a_resume_says_so(api: TestClient, store: JsonRepository) -> None:

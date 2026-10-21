@@ -450,6 +450,32 @@ def create_app(
             ) from None
         return build_job_detail(job, report, profile, has_resume)
 
+    @api.delete("/api/jobs/{job_id}")
+    def delete_job(
+        job_id: str, user: Annotated[VerifiedUser, Depends(current_user)]
+    ) -> dict[str, str]:
+        """Remove one posting, with its fit report and resume.
+
+        Those two describe a posting that no longer exists, so they go with it
+        (the same rule ``head_hunter.purge`` applies). Journal entries about
+        the job stay: the record that you applied somewhere is not undone by
+        removing the posting. Dependents are deleted before the job itself, so
+        a failure part-way leaves the job in the list to retry.
+        """
+        try:
+            repo = open_repository()
+            if repo.get_job(user.uid, job_id) is None:
+                raise HTTPException(status_code=404, detail="No such job.")
+            repo.delete_resume(user.uid, job_id)
+            repo.delete_fit_report(user.uid, job_id)
+            repo.delete_job(user.uid, job_id)
+        except StorageError:
+            logger.exception("Could not delete job %s for %s", job_id, user.uid)
+            raise HTTPException(
+                status_code=500, detail="Could not remove that job. Try again."
+            ) from None
+        return {"status": "deleted"}
+
     def rendered_resume(user_id: str, job_id: str) -> tuple[JobPosting, str]:
         """The resume for one job as Markdown, or the HTTP error saying why not."""
         try:

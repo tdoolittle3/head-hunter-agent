@@ -209,6 +209,8 @@
   .jb-empty { padding: 56px 24px; text-align: center; color: var(--dim);
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .jb-empty h2 { margin: 0 0 8px; font-size: 22px; }
+  .jb-wrap { display: flex; gap: 6px; align-items: stretch; margin-top: 10px; }
+  .jb-wrap .jb-row { margin-top: 0; }
   .jb-row { display: flex; width: 100%; align-items: center; gap: 14px; text-align: left;
     background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 14px 16px; margin-top: 10px; text-transform: none; letter-spacing: 0; }
@@ -1013,6 +1015,7 @@
       return;
     }
     for (const row of rows) {
+      const wrap = el("div", "jb-wrap");
       const btn = el("button", "jb-row");
       const main = el("span", "jb-main");
       main.appendChild(el("span", "jb-title", row.title || "Untitled role"));
@@ -1020,7 +1023,28 @@
       btn.appendChild(main);
       btn.appendChild(scoreChip(row.score));
       btn.addEventListener("click", () => openJob(row.job_id));
-      list.appendChild(btn);
+
+      const drop = el("button", "conv-x", "×");
+      drop.type = "button";
+      drop.title = "Remove this job — its fit report and resume go with it";
+      drop.setAttribute("aria-label", drop.title);
+      drop.addEventListener("click", async () => {
+        if (!confirm("Remove this job? Its fit report and resume are removed "
+          + "with it. Journal entries about it are kept.")) return;
+        try {
+          await authedDelete("/api/jobs/" + encodeURIComponent(row.job_id),
+            "Could not remove that job.");
+        } catch (error) {
+          jbError(error);
+          return;
+        }
+        wrap.remove();
+        if (!list.children.length) renderJobs([]);
+      });
+
+      wrap.appendChild(btn);
+      wrap.appendChild(drop);
+      list.appendChild(wrap);
     }
   }
 
