@@ -98,3 +98,33 @@ def test_an_unanalysed_job_has_no_score_and_no_lists() -> None:
     assert detail.score is None
     assert detail.summary is None
     assert detail.met == [] and detail.unmet == []
+
+
+def test_status_comes_from_the_journal_and_defaults_to_not_applied() -> None:
+    from head_hunter.job_views import job_statuses
+    from head_hunter.schemas import JournalEntry
+
+    def event(job_id: str, kind: str) -> JournalEntry:
+        return JournalEntry(user_id=USER, job_id=job_id, kind=kind, summary=kind)
+
+    entries = [
+        event("job-a", "applied"),
+        event("job-a", "interview"),
+        event("job-b", "applied"),
+        event("job-b", "rejection"),
+        event("job-c", "offer"),
+    ]
+    statuses = job_statuses(entries)
+    rows = summarize_jobs(
+        [job("job-a"), job("job-b"), job("job-c"), job("job-d")],
+        {},
+        set(),
+        statuses,
+    )
+
+    assert [(r.status.label, r.status.tone) for r in rows] == [
+        ("Interview", "active"),
+        ("Rejected", "closed"),
+        ("Offer", "offer"),
+        ("Not applied", "none"),
+    ]
