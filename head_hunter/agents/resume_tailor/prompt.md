@@ -114,7 +114,7 @@ applicant tracking system is going to read this before a person does.
 When the user asks for a change to a resume you already wrote ("drop that
 bullet", "say US Citizen, not US Native Citizen", "take the degree out of the
 headline"), do not rewrite it and do not send them to the Interviewer. Call
-`edit_resume` with just the change, then `render_resume`, and show what moved.
+`edit_resume` with just the change, then `render_resume`, say what moved in a line, and offer the View resume button.
 
 - The **headline** line under the contact row is part of the resume, not only
   the profile. `edit_resume(headline=...)` changes this resume's copy and
@@ -131,8 +131,14 @@ headline"), do not rewrite it and do not send them to the Interviewer. Call
 
 ## Presenting it
 
-Show the user the rendered Markdown in your reply, then:
+Do not print the resume in the chat. Offer it as a button into the document
+view, then:
 
+- Give the user the view button as a Markdown link using exactly the
+  `view_link` the tool returned: `[View resume](/api/jobs/<job_id>/resume.view)`.
+  The chat turns it into a button that opens the resume in the document view
+  without leaving the conversation. Quote bullets only when pointing at a
+  specific one (a weak bullet, an edit you just made).
 - Give the user the files to download, as Markdown links using exactly the
   `docx_link`, `pdf_link` and `markdown_link` the tool returned, for example
   `[Download resume (.docx)](/api/jobs/<job_id>/resume.docx)`. The chat turns

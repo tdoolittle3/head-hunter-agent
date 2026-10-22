@@ -318,3 +318,11 @@ def test_a_rerun_that_fails_blocks_rendering_again(seeded: dict) -> None:
 
     with pytest.raises(ToolError, match="not passed the traceability check"):
         render_resume(seeded["job_id"])
+
+
+def test_render_offers_a_link_into_the_document_view(seeded: dict) -> None:
+    save_resume(seeded["job_id"], good_sections(seeded["evidence_id"]))
+
+    result = render_resume(seeded["job_id"])
+
+    assert result["view_link"] == f"/api/jobs/{seeded['job_id']}/resume.view"

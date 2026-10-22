@@ -358,8 +358,9 @@ def render_resume(job_id: str, tool_context: ToolContext | None = None) -> dict:
             Never fill this in.
 
     Returns:
-        Where the two files landed, plus the Markdown itself so you can show
-        the user what was written.
+        Where the files landed, the link to open the resume in the document
+        view (offer this, do not print the resume), and the Markdown itself,
+        which is only for checking.
     """
     repo = repository()
     user_id = current_user_id(tool_context)
@@ -401,6 +402,7 @@ def render_resume(job_id: str, tool_context: ToolContext | None = None) -> dict:
         "markdown_path": markdown_path,
         "docx_path": docx_path,
         "pdf_path": pdf_path,
+        "view_link": f"/api/jobs/{job_id}/resume.view",
         "docx_link": f"/api/jobs/{job_id}/resume.docx",
         "pdf_link": f"/api/jobs/{job_id}/resume.pdf",
         "markdown_link": f"/api/jobs/{job_id}/resume.md",
