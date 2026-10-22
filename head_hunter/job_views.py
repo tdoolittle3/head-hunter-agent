@@ -13,12 +13,54 @@ from datetime import datetime
 
 from pydantic import Field
 
+from head_hunter.funnel import describe_applications
 from head_hunter.schemas import (
     FitReport,
     HeadHunterModel,
     JobPosting,
+    JournalEntry,
     Profile,
 )
+
+NOT_APPLIED = "Not applied"
+STATUS_TONES = {
+    "offer": "offer",
+    "rejected": "closed",
+    "withdrawn": "closed",
+    "no_response": "closed",
+}
+
+
+class JobStatus(HeadHunterModel):
+    """Where one application stands, in words the Jobs page can print."""
+
+    label: str = Field(description="e.g. Applied, Interview, Rejected, Not applied.")
+    tone: str = Field(description="none, active, offer or closed; picks the colour.")
+
+
+def job_statuses(entries: list[JournalEntry]) -> dict[str, JobStatus]:
+    """Read each saved posting's status from the journal; absent means not applied."""
+    statuses = {}
+    for application in describe_applications(entries):
+        job_id = application["job_id"]
+        if not job_id:
+            continue
+        state = application["status"] or "in_progress"
+        label = {
+            "rejected": "Rejected",
+            "withdrawn": "Withdrawn",
+            "no_response": "No response",
+            "offer": "Offer",
+        }.get(state, application["furthest_stage"] or "Applied")
+        statuses[job_id] = JobStatus(
+            label=label, tone=STATUS_TONES.get(state, "active")
+        )
+    return statuses
+
+
+def status_for(statuses: dict[str, JobStatus], job_id: str) -> JobStatus:
+    """The job's status, or the not-applied default."""
+    return statuses.get(job_id) or JobStatus(label=NOT_APPLIED, tone="none")
 
 
 class JobSummary(HeadHunterModel):
@@ -33,6 +75,7 @@ class JobSummary(HeadHunterModel):
     saved_at: datetime = Field(description="When the posting was saved.")
     score: int | None = Field(description="Fit score, or None before analysis.")
     has_resume: bool = Field(description="Whether a tailored resume exists.")
+    status: JobStatus = Field(description="Where the application stands.")
 
 
 class EvidenceQuote(HeadHunterModel):
@@ -76,14 +119,17 @@ class JobDetail(HeadHunterModel):
     met: list[MetItem]
     unmet: list[UnmetItem]
     has_resume: bool
+    status: JobStatus
 
 
 def summarize_jobs(
     jobs: list[JobPosting],
     reports: dict[str, FitReport | None],
     jobs_with_resumes: set[str],
+    statuses: dict[str, JobStatus] | None = None,
 ) -> list[JobSummary]:
     """One list row per posting, in the order the postings arrived."""
+    statuses = statuses or {}
     rows = []
     for job in jobs:
         report = reports.get(job.id)
@@ -98,6 +144,7 @@ def summarize_jobs(
                 saved_at=job.created_at,
                 score=report.score if report else None,
                 has_resume=job.id in jobs_with_resumes,
+                status=status_for(statuses, job.id),
             )
         )
     return rows
@@ -115,6 +162,7 @@ def build_job_detail(
     report: FitReport | None,
     profile: Profile | None,
     has_resume: bool,
+    status: JobStatus | None = None,
 ) -> JobDetail:
     """Join one posting with its fit report and the evidence the report cites."""
     met = [
@@ -149,4 +197,5 @@ def build_job_detail(
         met=met,
         unmet=unmet,
         has_resume=has_resume,
+        status=status or status_for({}, job.id),
     )

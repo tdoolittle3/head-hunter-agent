@@ -59,6 +59,7 @@ from head_hunter.job_views import (
     JobDetail,
     JobSummary,
     build_job_detail,
+    job_statuses,
     summarize_jobs,
 )
 from head_hunter.overview import Overview, compute_overview
@@ -480,12 +481,13 @@ def create_app(
             with_resumes = {
                 job.id for job in saved if repo.get_resume(user.uid, job.id) is not None
             }
+            statuses = job_statuses(repo.list_journal_entries(user.uid))
         except StorageError:
             logger.exception("Could not list jobs for %s", user.uid)
             raise HTTPException(
                 status_code=500, detail="Could not load your jobs. Try again."
             ) from None
-        return summarize_jobs(saved, reports, with_resumes)
+        return summarize_jobs(saved, reports, with_resumes, statuses)
 
     @api.get("/api/jobs/{job_id}", response_model=JobDetail)
     def job_detail(
@@ -500,12 +502,13 @@ def create_app(
             report = repo.get_fit_report(user.uid, job_id)
             profile = repo.get_profile(user.uid)
             has_resume = repo.get_resume(user.uid, job_id) is not None
+            statuses = job_statuses(repo.list_journal_entries(user.uid))
         except StorageError:
             logger.exception("Could not load job %s for %s", job_id, user.uid)
             raise HTTPException(
                 status_code=500, detail="Could not load that job. Try again."
             ) from None
-        return build_job_detail(job, report, profile, has_resume)
+        return build_job_detail(job, report, profile, has_resume, statuses.get(job_id))
 
     @api.delete("/api/jobs/{job_id}")
     def delete_job(

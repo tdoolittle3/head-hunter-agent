@@ -226,6 +226,13 @@
   .score.mid { color: var(--gold); border-color: rgba(255, 200, 61, .45); }
   .score.low { color: var(--ember); border-color: rgba(255, 86, 54, .45); }
   .score.none { color: var(--dim); }
+  .status { flex: none; display: inline-block; padding: 3px 9px; border-radius: 2px;
+    font: 500 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    white-space: nowrap; border: 1px solid var(--line); color: var(--dim); }
+  .status.active { color: var(--cyan); border-color: rgba(0, 229, 255, .45); }
+  .status.offer { color: var(--mint); border-color: rgba(52, 240, 168, .45); }
+  .status.closed { color: var(--ember); border-color: rgba(255, 86, 54, .45); }
+  #jb-detail .status { margin-top: 10px; }
 
   /* One job: the fit report, with the evidence quoted */
   .jb-back { margin-bottom: 18px; }
@@ -238,9 +245,17 @@
   .jb-band button { flex: none; }
   @media (max-width: 640px) { .jb-band { flex-wrap: wrap; } }
   #jb-detail .eyebrow { margin: 30px 0 4px; }
-  .req { border-top: 1px solid var(--line); padding: 14px 0 10px; }
-  .req h3 { margin: 0; font: 500 14px/1.5 var(--mono); color: var(--text); }
-  .req .note { margin: 6px 0 0; color: var(--dim); font-size: 13px; }
+  .req { border-top: 1px solid var(--line); }
+  .req summary { display: flex; gap: 10px; align-items: baseline; cursor: pointer; list-style: none;
+    padding: 12px 0; }
+  .req summary::-webkit-details-marker { display: none; }
+  .req summary::before { content: "\25B8"; flex: none; color: var(--dim); font-size: 11px; }
+  .req[open] summary::before { content: "\25BE"; }
+  .req summary:hover h3 { color: var(--cyan); }
+  .req h3 { margin: 0; font: 500 14px/1.5 var(--mono); color: var(--text); flex: 1; }
+  .req .gaptag { margin-left: 0; flex: none; }
+  .req-body { padding: 0 0 14px 21px; }
+  .req .note { margin: 0; color: var(--dim); font-size: 13px; }
   .quote { border-left: 2px solid var(--cyan); margin: 10px 0 0; padding: 4px 12px;
     color: var(--dim); font-size: 13px; font-style: italic; overflow-wrap: anywhere; }
   .gaptag { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 2px 8px;
@@ -264,18 +279,30 @@
     display: flex; align-items: center; justify-content: center; padding: 20px; }
   #editor-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     width: min(860px, 100%); height: calc(100vh - 40px); display: flex; flex-direction: column; overflow: hidden; }
-  #editor-body { flex: 1; overflow-y: auto; padding: 16px 20px 28px; }
-  #editor-body label { display: block; font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
-    color: var(--dim); margin: 18px 0 6px; }
+  #editor-body { flex: 1; overflow-y: auto; padding: 20px 28px 36px; }
+  /* Fields look like the printed page until touched, not like a form */
   #editor-body textarea, #editor-body input { width: 100%; box-sizing: border-box; max-height: none;
-    font: inherit; font-size: 16px; color: var(--text); background: var(--ink); border: 1px solid var(--line);
-    border-radius: 4px; padding: 9px 11px; }
-  #editor-body textarea { resize: vertical; min-height: 44px; }
-  .ed-section { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 4px; }
-  .ed-bullet { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
-  .ed-bullet button, .ed-actions button { padding: 6px 10px; font-size: 11px; }
-  .ed-actions { display: flex; gap: 8px; margin-top: 10px; }
-  #editor-note { color: var(--dim); font-size: 13px; margin: 0; }
+    font: inherit; font-size: 15px; line-height: 1.5; color: var(--text); background: transparent;
+    border: 1px solid transparent; border-radius: 4px; padding: 6px 8px; resize: none; overflow: hidden; }
+  #editor-body textarea:hover, #editor-body input:hover { border-color: var(--line); }
+  #editor-body textarea:focus, #editor-body input:focus { outline: 0; border-color: var(--cyan);
+    background: var(--ink); }
+  #editor-headline { font-size: 17px; font-weight: 500; }
+  .ed-section { margin-top: 28px; }
+  .ed-head { display: flex; gap: 10px; align-items: baseline; border-bottom: 1px solid var(--line);
+    padding-bottom: 4px; }
+  .ed-head .ed-title { flex: 1; font: 500 12px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+  .ed-head .ed-sub { flex: 0 1 38%; font-size: 13px; color: var(--dim); text-align: right; }
+  .ed-bullet { display: flex; gap: 4px; align-items: flex-start; margin-top: 2px; }
+  .ed-bullet::before { content: "\2022"; color: var(--dim); padding: 7px 0 0 4px; }
+  .ed-x { flex: none; background: none; border: 0; color: var(--dim); font-size: 18px; line-height: 1;
+    padding: 6px 8px; cursor: pointer; opacity: 0; text-transform: none; letter-spacing: 0; }
+  .ed-bullet:hover .ed-x, .ed-x:focus, .ed-head:hover .ed-x { opacity: 1; }
+  .ed-x:hover { color: var(--ember); }
+  .ed-add { background: none; border: 0; color: var(--dim); font-size: 12px; padding: 6px 8px 6px 22px;
+    cursor: pointer; text-transform: none; letter-spacing: 0; }
+  .ed-add:hover { color: var(--cyan); }
+  #editor-note { color: var(--dim); font-size: 12px; margin: 0 0 18px; padding-left: 8px; }
   #viewer-frame { flex: 1; width: 100%; border: 0; background: #3c4049; }
 
   /* Profile page and the funnel graph on it */
@@ -1050,6 +1077,10 @@
     return el("span", "score " + cls, score == null ? "—" : String(score));
   }
 
+  function statusChip(status) {
+    return el("span", "status " + status.tone, status.label);
+  }
+
   function metaLine(d) {
     return [d.company, d.location, d.remote, d.comp].filter(Boolean).join(" · ");
   }
@@ -1083,6 +1114,7 @@
       main.appendChild(el("span", "jb-title", row.title || "Untitled role"));
       main.appendChild(el("span", "jb-meta", metaLine(row) || "details pending"));
       btn.appendChild(main);
+      btn.appendChild(statusChip(row.status));
       btn.appendChild(scoreChip(row.score));
       btn.addEventListener("click", () => openJob(row.job_id));
 
@@ -1231,14 +1263,17 @@
   });
 
   function requirementBlock(item, tag) {
-    const req = el("div", "req");
-    const head = el("h3", null, item.requirement);
-    head.appendChild(el("span", "gaptag " + tag, tag));
+    const req = el("details", "req");
+    const head = el("summary");
+    head.append(el("h3", null, item.requirement), el("span", "gaptag " + tag, tag));
     req.appendChild(head);
-    if (item.note) req.appendChild(el("p", "note", item.note));
+    const body = el("div", "req-body");
+    if (item.note) body.appendChild(el("p", "note", item.note));
     for (const quote of item.evidence || []) {
-      req.appendChild(el("blockquote", "quote", "“" + quote.text + "”"));
+      body.appendChild(el("blockquote", "quote", "\u201c" + quote.text + "\u201d"));
     }
+    if (!body.children.length) body.appendChild(el("p", "note", "No justification recorded."));
+    req.appendChild(body);
     return req;
   }
 
@@ -1255,35 +1290,50 @@
     const row = el("div", "ed-bullet");
     const box = el("textarea");
     box.value = bullet.text;
-    box.rows = 2;
+    box.rows = 1;
+    box.setAttribute("aria-label", "Bullet");
+    box.addEventListener("input", () => grow(box));
     row._ids = bullet.evidence_ids || [];
-    const drop = el("button", null, "Remove");
+    const drop = el("button", "ed-x", "\u00d7");
     drop.type = "button";
+    drop.title = "Remove this bullet";
+    drop.setAttribute("aria-label", drop.title);
     drop.addEventListener("click", () => row.remove());
     row.append(box, drop);
     list.appendChild(row);
+    grow(box);
     return box;
+  }
+
+  function grow(box) {
+    box.style.height = "auto";
+    box.style.height = box.scrollHeight + 2 + "px";
   }
 
   function sectionBlock(section) {
     const block = el("div", "ed-section");
-    const title = el("input");
+    const head = el("div", "ed-head");
+    const title = el("input", "ed-title");
     title.value = section.title;
-    const sub = el("input");
+    title.setAttribute("aria-label", "Heading");
+    const sub = el("input", "ed-sub");
     sub.value = section.subtitle || "";
-    block.append(el("label", null, "Heading"), title, el("label", null, "Dates / detail"), sub);
+    sub.placeholder = "dates / detail";
+    sub.setAttribute("aria-label", "Dates or detail");
+    const del = el("button", "ed-x", "\u00d7");
+    del.type = "button";
+    del.title = "Remove this section";
+    del.setAttribute("aria-label", del.title);
+    del.addEventListener("click", () => block.remove());
+    head.append(title, sub, del);
+    block.appendChild(head);
     const list = el("div");
     for (const b of section.bullets) bulletRow(list, b);
     block.appendChild(list);
-    const actions = el("div", "ed-actions");
-    const add = el("button", null, "Add bullet");
+    const add = el("button", "ed-add", "+ Add bullet");
     add.type = "button";
     add.addEventListener("click", () => bulletRow(list, { text: "", evidence_ids: [] }).focus());
-    const del = el("button", null, "Remove section");
-    del.type = "button";
-    del.addEventListener("click", () => block.remove());
-    actions.append(add, del);
-    block.appendChild(actions);
+    block.appendChild(add);
     block._read = () => ({
       title: title.value,
       subtitle: sub.value,
@@ -1303,17 +1353,18 @@
     const data = await res.json();
     editorJob = jobId;
     const body = $("editor-body");
-    const note = el("p", null, "These are your own words: what you type here goes on the resume "
-      + "exactly as written and is saved as something you said. Headline edits apply to this "
-      + "resume only, not your profile.");
+    const note = el("p", null, "Click any line to change it. Your wording goes on the resume "
+      + "exactly as typed and is saved as something you said; edits apply to this resume only.");
     note.id = "editor-note";
     body.replaceChildren(note);
     const headline = el("input");
     headline.id = "editor-headline";
     headline.value = data.headline;
-    body.append(el("label", null, "Headline"), headline);
+    headline.setAttribute("aria-label", "Headline");
+    body.appendChild(headline);
     for (const section of data.sections) body.appendChild(sectionBlock(section));
     show("editor", true);
+    body.querySelectorAll("textarea").forEach(grow);
     headline.focus();
   }
 
@@ -1355,6 +1406,7 @@
     box.appendChild(el("h2", null, d.title || "Untitled role"));
     const meta = metaLine(d);
     if (meta) box.appendChild(el("p", "jb-meta", meta));
+    box.appendChild(statusChip(d.status));
 
     const band = el("div", "jb-band");
     band.appendChild(scoreChip(d.score));
